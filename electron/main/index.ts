@@ -54,12 +54,12 @@ const index = join(process.env.DIST, 'index.html')
 
 const createWindow = function<T extends BrowserWindowConstructorOptions>(options: T): void {
   win = new BrowserWindow(options);
-  // 启动devtools
-  win.webContents.openDevTools();
 
   // electron-vite-vue#298
   if (process.env.VITE_DEV_SERVER_URL) {
     win.loadURL(url);
+    // 启动devtools
+    win.webContents.openDevTools();
   } else {
     win.loadFile(index);
   }
