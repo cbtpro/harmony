@@ -2,9 +2,8 @@
  * @see https://www.electron.build/configuration/configuration
  */
 {
-  "appId": "YourAppID",
+  "appId": "com.chenbitao.harmony",
   "asar": true,
-  "icon": "public/favicon.ico",
   "directories": {
     "output": "release/${version}"
   },
@@ -13,12 +12,14 @@
     "dist"
   ],
   "mac": {
+    "icon": "public/favicon_512x512.ico",
     "artifactName": "${productName}_${version}.${ext}",
     "target": [
       "dmg"
     ]
   },
   "win": {
+    "icon": "public/favicon_256x256.ico",
     "target": [
       {
         "target": "nsis",
@@ -28,6 +29,9 @@
       }
     ],
     "artifactName": "${productName}_${version}.${ext}"
+  },
+  "linux": {
+    "icon": "public/favicon_256x256.ico",
   },
   "nsis": {
     "oneClick": false,
