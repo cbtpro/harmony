@@ -119,7 +119,8 @@ let tray: Tray | null = null;
  * 使用app.on('ready', () => {});直接监听nodejs事件可能会带来一些问题，详情见https://github.com/electron/electron/pull/21972
  */
 app.whenReady().then(() => {
-  tray = new Tray('public/favicon-16x16.png');
+  const icon = join(process.env.PUBLIC, 'favicon-16x16.png');
+  tray = new Tray(icon);
   const contextMenu = Menu.buildFromTemplate([
     // { label: 'Item1', type: 'radio' },
     // { label: 'Item2', type: 'radio' },
