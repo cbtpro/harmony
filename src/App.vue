@@ -26,4 +26,15 @@ console.log("[App.vue]", `Hello world from Electron ${process.versions.electron}
 </template>
 
 <style>
+/* @media (prefers-color-scheme: dark) {
+  body { background: #333; color: white; }
+}
+
+@media (prefers-color-scheme: light) {
+  body { background: #ddd; color: black; }
+}
+
+@media (prefers-color-scheme: pink) {
+  body { background: #ddd; color: black; }
+} */
 </style>

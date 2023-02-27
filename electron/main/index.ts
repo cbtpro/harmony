@@ -20,6 +20,7 @@ import {
   Tray,
   ipcMain,
   BrowserWindowConstructorOptions,
+  nativeTheme,
 } from 'electron';
 import { release } from 'node:os';
 import { join } from 'node:path';
@@ -59,6 +60,8 @@ let win: BrowserWindow | null = null;
 const preload = join(__dirname, '../preload/index.js');
 const url = process.env.VITE_DEV_SERVER_URL;
 const index = join(process.env.DIST, 'index.html');
+
+// nativeTheme.themeSource = 'dark';
 
 const createWindow = function <T extends BrowserWindowConstructorOptions>(
   options: T
@@ -124,11 +127,17 @@ app.whenReady().then(() => {
     { label: '关于', type: 'normal', click: linkAbout },
     { label: '退出', type: 'normal', click: quit }
   ])
-  tray.setToolTip('This is my application.')
+  tray.setToolTip('Harmony 好用的跨平台文件管理工具')
   tray.setContextMenu(contextMenu)
+
   const options: BrowserWindowConstructorOptions = {
     title: 'harmony',
+    width: 1100,
+    height: 660,
     icon: join(process.env.PUBLIC, 'favicon.ico'),
+    // 隐藏标题栏，使用自定义标题栏
+    frame: false,
+    // hasShadow: false,
     webPreferences: {
       preload,
       // Warning: Enable nodeIntegration and disable contextIsolation is not secure in production
