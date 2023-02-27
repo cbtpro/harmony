@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 import { createRouter, createWebHashHistory, } from 'vue-router';
-import Welcome from '../pages/Welcome.vue';
-import About from '../pages/About.vue';
+import Welcome from '@/pages/Welcome.vue';
+import About from '@/pages/About.vue';
 
 const routes = [
   {

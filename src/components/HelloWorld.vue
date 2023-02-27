@@ -3,8 +3,8 @@ import { ipcRenderer } from 'electron';
 import { computed, ref, effect, onUnmounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import dayjs from 'dayjs';
-import { useCounterStore } from '../store/counter';
-import { DATE_FMT_YYYY_MM_DD_HH_MM_SS } from '../constants/app';
+import { useCounterStore } from '@/store/counter';
+import { DATE_FMT_YYYY_MM_DD_HH_MM_SS } from '@/constants/app';
 
 defineProps<{ msg: string }>()
 

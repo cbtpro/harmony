@@ -1,4 +1,5 @@
 import { rmSync } from 'node:fs';
+import { resolve } from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import electron from 'vite-plugin-electron';
@@ -14,6 +15,12 @@ export default defineConfig(({ command, mode, ssrBuild }) => {
   const sourcemap = isServe || !!process.env.VSCODE_DEBUG;
 
   return {
+    resolve: {
+      alias: {
+        '@': resolve(__dirname, 'src'),
+      },
+      extensions: ['.js', '.ts', '.vue', '.json'],
+    },
     plugins: [
       vue(),
       electron([

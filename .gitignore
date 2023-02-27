@@ -133,3 +133,4 @@ dist/
 release/
 dist-electron/
 .history/
+.DS_store

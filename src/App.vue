@@ -2,7 +2,7 @@
 import { ipcRenderer } from 'electron';
 import { effect, onUnmounted } from 'vue';
 import { RouterView, useRouter, } from 'vue-router';
-import Navigation from './components/Navigation.vue'
+import Navigation from '@/components/Navigation.vue';
 
 const router = useRouter();
 const jumpAbout = function (event: Electron.IpcRendererEvent, ...args: any[]): void {
@@ -21,7 +21,7 @@ console.log("[App.vue]", `Hello world from Electron ${process.versions.electron}
 </script>
 
 <template>
-  <Navigation />
+  <navigation />
   <router-view></router-view>
 </template>
 
