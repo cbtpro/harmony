@@ -1,20 +1,28 @@
 // Copyright 2023 chenbitao
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { app, BrowserWindow, shell, ipcMain, BrowserWindowConstructorOptions } from 'electron'
-import { release } from 'node:os'
-import { join } from 'node:path'
+import {
+  app,
+  BrowserWindow,
+  Menu,
+  shell,
+  Tray,
+  ipcMain,
+  BrowserWindowConstructorOptions,
+} from 'electron';
+import { release } from 'node:os';
+import { join } from 'node:path';
 
 // The built directory structure
 //
@@ -26,21 +34,21 @@ import { join } from 'node:path'
 // ├─┬ dist
 // │ └── index.html    > Electron-Renderer
 //
-process.env.DIST_ELECTRON = join(__dirname, '..')
-process.env.DIST = join(process.env.DIST_ELECTRON, '../dist')
+process.env.DIST_ELECTRON = join(__dirname, '..');
+process.env.DIST = join(process.env.DIST_ELECTRON, '../dist');
 process.env.PUBLIC = process.env.VITE_DEV_SERVER_URL
   ? join(process.env.DIST_ELECTRON, '../public')
-  : process.env.DIST
+  : process.env.DIST;
 
 // Disable GPU Acceleration for Windows 7
-if (release().startsWith('6.1')) app.disableHardwareAcceleration()
+if (release().startsWith('6.1')) app.disableHardwareAcceleration();
 
 // Set application name for Windows 10+ notifications
-if (process.platform === 'win32') app.setAppUserModelId(app.getName())
+if (process.platform === 'win32') app.setAppUserModelId(app.getName());
 
 if (!app.requestSingleInstanceLock()) {
-  app.quit()
-  process.exit(0)
+  app.quit();
+  process.exit(0);
 }
 
 // Remove electron security warnings
@@ -48,11 +56,13 @@ if (!app.requestSingleInstanceLock()) {
 // Read more on https://www.electronjs.org/docs/latest/tutorial/security
 // process.env['ELECTRON_DISABLE_SECURITY_WARNINGS'] = 'true'
 let win: BrowserWindow | null = null;
-const preload = join(__dirname, '../preload/index.js')
-const url = process.env.VITE_DEV_SERVER_URL
-const index = join(process.env.DIST, 'index.html')
+const preload = join(__dirname, '../preload/index.js');
+const url = process.env.VITE_DEV_SERVER_URL;
+const index = join(process.env.DIST, 'index.html');
 
-const createWindow = function<T extends BrowserWindowConstructorOptions>(options: T): void {
+const createWindow = function <T extends BrowserWindowConstructorOptions>(
+  options: T
+): void {
   win = new BrowserWindow(options);
 
   // electron-vite-vue#298
@@ -66,23 +76,49 @@ const createWindow = function<T extends BrowserWindowConstructorOptions>(options
 
   // Test actively push message to the Electron-Renderer
   win.webContents.on('did-finish-load', () => {
-    win?.webContents.send('main-process-message', new Date().toLocaleString())
-  })
+    win?.webContents.send('main-process-message', new Date().toLocaleString());
+  });
 
   // Make all links open with the browser, not with the application
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('https:')) shell.openExternal(url)
-    return { action: 'deny' }
-  })
+    if (url.startsWith('https:')) shell.openExternal(url);
+    return { action: 'deny' };
+  });
   // win.webContents.on('will-navigate', (event, url) => { }) #344
 
-  console.log(`欢迎来到 Electron 👋`)
+  console.log(`欢迎来到 Electron 👋`);
 };
 
+/**
+ * 通知vue跳转关于页面
+ */
+const linkAbout = () => {
+  if (win) {
+    win.webContents.send('jump-router', '/about');
+  }
+};
+
+/**
+ * 退出应用
+ */
+const quit = () => {
+  app.quit();
+};
+let tray: Tray | null = null;
 /**
  * 使用app.on('ready', () => {});直接监听nodejs事件可能会带来一些问题，详情见https://github.com/electron/electron/pull/21972
  */
 app.whenReady().then(() => {
+  tray = new Tray('public/favicon-16x16.png');
+  const contextMenu = Menu.buildFromTemplate([
+    // { label: 'Item1', type: 'radio' },
+    // { label: 'Item2', type: 'radio' },
+    // { label: 'Item3', type: 'radio', checked: true },
+    { label: '关于', type: 'normal', click: linkAbout },
+    { label: '退出', type: 'normal', click: quit }
+  ])
+  tray.setToolTip('This is my application.')
+  tray.setContextMenu(contextMenu)
   const options: BrowserWindowConstructorOptions = {
     title: 'harmony',
     icon: join(process.env.PUBLIC, 'favicon.ico'),
@@ -105,7 +141,7 @@ app.whenReady().then(() => {
     if (allWindows.length === 0) {
       createWindow(options);
     } else {
-      allWindows[0].focus()
+      allWindows[0].focus();
     }
   });
 });
@@ -117,16 +153,15 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
-})
+});
 
 app.on('second-instance', () => {
   if (win) {
     // Focus on the main window if the user tried to open another
-    if (win.isMinimized()) win.restore()
-    win.focus()
+    if (win.isMinimized()) win.restore();
+    win.focus();
   }
-})
-
+});
 
 // New window example arg: new windows url
 ipcMain.handle('open-win', (_, arg) => {
@@ -136,11 +171,11 @@ ipcMain.handle('open-win', (_, arg) => {
       nodeIntegration: true,
       contextIsolation: false,
     },
-  })
+  });
 
   if (process.env.VITE_DEV_SERVER_URL) {
-    childWindow.loadURL(`${url}#${arg}`)
+    childWindow.loadURL(`${url}#${arg}`);
   } else {
-    childWindow.loadFile(index, { hash: arg })
+    childWindow.loadFile(index, { hash: arg });
   }
-})
+});
