@@ -104,6 +104,13 @@ const linkAbout = () => {
 const quit = () => {
   app.quit();
 };
+
+ipcMain.on('send-msg', (event, ...args)=> {
+  const [msg] = args
+  console.log('当前时间：', msg);
+  // event.reply('jump-router', '/about');
+});
+
 let tray: Tray | null = null;
 /**
  * 使用app.on('ready', () => {});直接监听nodejs事件可能会带来一些问题，详情见https://github.com/electron/electron/pull/21972

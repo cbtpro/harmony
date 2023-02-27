@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ipcRenderer } from 'electron';
 import { computed, ref, effect, onUnmounted } from 'vue';
 import { storeToRefs } from 'pinia';
 import dayjs from 'dayjs';
@@ -34,6 +35,10 @@ onUnmounted(() => {
 const nowFmt = computed(() => {
   return dayjs(now.value).format(DATE_FMT_YYYY_MM_DD_HH_MM_SS);
 });
+
+const sendMsg = () => {
+  ipcRenderer.send('send-msg', nowFmt.value);
+};
 </script>
 
 <template>
@@ -43,6 +48,7 @@ const nowFmt = computed(() => {
     <button type="button" @click="increment">count is {{ count }}</button>
     <div>double count is {{ double }}</div>
     <div>now is {{ nowFmt }}</div>
+    <button type="button" @click="sendMsg">给主进程发消息，观察IDE控制台</button>
     <p>
       Edit
       <code>components/HelloWorld.vue</code> to test HMR
