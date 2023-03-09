@@ -136,10 +136,16 @@ app.whenReady().then(() => {
     width: 1100,
     height: 660,
     icon: join(process.env.PUBLIC, 'favicon.ico'),
-    // 隐藏标题栏，使用自定义标题栏
-    frame: false,
+    // false为隐藏标题栏，需要开发并使用自定义标题栏
+    frame: true,
+    titleBarStyle: "hidden",
+    titleBarOverlay: {
+        color: "#fff",
+        // symbolColor: "black",
+    },
     // hasShadow: false,
     webPreferences: {
+      devTools: true,
       preload,
       // Warning: Enable nodeIntegration and disable contextIsolation is not secure in production
       // Consider using contextBridge.exposeInMainWorld

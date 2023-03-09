@@ -2,6 +2,7 @@
 import { ipcRenderer } from 'electron';
 import { effect, onUnmounted } from 'vue';
 import { RouterView, useRouter, } from 'vue-router';
+import TitleBar from '@/components/TitleBar.vue';
 import Navigation from '@/components/Navigation.vue';
 
 const router = useRouter();
@@ -21,6 +22,7 @@ console.log("[App.vue]", `Hello world from Electron ${process.versions.electron}
 </script>
 
 <template>
+  <title-bar />
   <navigation />
   <router-view></router-view>
 </template>

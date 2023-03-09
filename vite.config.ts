@@ -1,6 +1,9 @@
 import { rmSync } from 'node:fs';
 import { resolve } from 'path';
 import { defineConfig, loadEnv } from 'vite';
+import AutoImport from 'unplugin-auto-import/vite';
+import Components from 'unplugin-vue-components/vite';
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers';
 import vue from '@vitejs/plugin-vue';
 import electron from 'vite-plugin-electron';
 import renderer from 'vite-plugin-electron-renderer';
@@ -23,6 +26,15 @@ export default defineConfig(({ command, mode, ssrBuild }) => {
     },
     plugins: [
       vue(),
+      /**
+       * element-plus按需导入
+       */
+      AutoImport({
+        resolvers: [ElementPlusResolver()],
+      }),
+      Components({
+        resolvers: [ElementPlusResolver()],
+      }),
       electron([
         {
           // Main-Process entry file of the Electron App.
