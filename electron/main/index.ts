@@ -25,6 +25,9 @@ import {
 import { release } from 'node:os';
 import { join } from 'node:path';
 
+const NODE_ENV = process.env.NODE_ENV;
+const isDev = NODE_ENV === 'development';
+
 // The built directory structure
 //
 // ├─┬ dist-electron

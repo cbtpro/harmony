@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia';
 import dayjs from 'dayjs';
 import { useCounterStore } from '@/store/counter';
 import { DATE_FMT_YYYY_MM_DD_HH_MM_SS } from '@/constants/app';
+import { env } from '@/constants/env';
 
 defineProps<{ msg: string }>()
 
@@ -53,6 +54,7 @@ const sendMsg = () => {
       Edit
       <code>components/HelloWorld.vue</code> to test HMR
     </p>
+    <div>env: {{ env }}</div>
   </div>
 
   <p>

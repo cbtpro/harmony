@@ -11,7 +11,9 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "vite",
+    "dev:staging": "vite --mode staging",
     "build": "vue-tsc --noEmit && vite build && electron-builder",
+    "build:staging": "vue-tsc --noEmit && vite --mode staging build && electron-builder",
     "preview": "vite preview"
   },
   "repository": {
