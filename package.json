@@ -34,7 +34,7 @@
   },
   "homepage": "https://github.com/cbtpro/harmony#readme",
   "devDependencies": {
-    "@vitejs/plugin-vue": "^4.0.0",
+    "@vitejs/plugin-vue": "^4.2.1",
     "electron": "^23.1.1",
     "electron-builder": "^23.6.0",
     "typescript": "^4.9.5",
