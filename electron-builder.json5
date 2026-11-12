@@ -12,7 +12,6 @@
     "dist"
   ],
   "mac": {
-    "icon": "public/favicon_512x512.ico",
     "artifactName": "${productName}_${version}.${ext}",
     "target": [
       "dmg"
@@ -31,7 +30,8 @@
     "artifactName": "${productName}_${version}.${ext}"
   },
   "linux": {
-    "icon": "public/favicon_256x256.ico",
+    "target": ["AppImage", "deb"],
+    "category": "Utility"
   },
   "nsis": {
     "oneClick": false,

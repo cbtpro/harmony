@@ -11,20 +11,51 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-import { createRouter, createWebHashHistory, } from 'vue-router';
-import Welcome from '@/pages/Welcome.vue';
-import About from '@/pages/About.vue';
+import { createRouter, createWebHashHistory } from 'vue-router';
+import type { RouteRecordRaw } from 'vue-router';
 
-const routes = [
+declare module 'vue-router' {
+  interface RouteMeta {
+    title?: string;
+    cacheName?: string;
+    pinned?: boolean;
+  }
+}
+
+export const workspaceRoutes = [
   {
     path: '/',
-    component: Welcome,
+    name: 'files',
+    meta: { title: '文件', cacheName: 'Welcome', pinned: true },
+    component: () => import('@/pages/Welcome.vue'),
+  },
+  {
+    path: '/disks',
+    name: 'disks',
+    meta: { title: '磁盘', cacheName: 'Disks' },
+    component: () => import('@/pages/Disks.vue'),
+  },
+  {
+    path: '/media',
+    name: 'media',
+    meta: { title: '媒体库', cacheName: 'MediaLibrary' },
+    component: () => import('@/pages/MediaLibrary.vue'),
+  },
+  {
+    path: '/search',
+    name: 'search',
+    meta: { title: '全局搜索', cacheName: 'GlobalSearch' },
+    component: () => import('@/pages/GlobalSearch.vue'),
   },
   {
     path: '/about',
-    component: About,
+    name: 'about',
+    meta: { title: '关于', cacheName: 'About' },
+    component: () => import('@/pages/About.vue'),
   },
-];
+] as const;
+
+const routes: RouteRecordRaw[] = [...workspaceRoutes, { path: '/:pathMatch(.*)*', redirect: { name: 'files' } }];
 
 const router = createRouter({
   history: createWebHashHistory(),

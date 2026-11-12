@@ -1,31 +1,20 @@
-import { rmSync } from 'node:fs';
 import { resolve } from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import AutoImport from 'unplugin-auto-import/vite';
 import Components from 'unplugin-vue-components/vite';
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers';
 import vue from '@vitejs/plugin-vue';
 import electron from 'vite-plugin-electron';
-import renderer from 'vite-plugin-electron-renderer';
 import pkg from './package.json';
 
 // https://vitejs.dev/config/
-export default defineConfig(({ command, mode, ssrBuild }) => {
-  rmSync('dist-electron', { recursive: true, force: true });
-  // mode: production/development
-  console.info('当前mode：', mode);
-
-  // 根据当前工作目录中的 `mode` 加载 .env 文件
-  // 设置第三个参数为 '' 来加载所有环境变量，而不管是否有 `VITE_` 前缀。
-  const env = loadEnv(mode, process.cwd(), 'VITE_')
-
-  console.log(env);
-
+export default defineConfig(({ command }) => {
   const isServe = command === 'serve';
   const isBuild = command === 'build';
   const sourcemap = isServe || !!process.env.VSCODE_DEBUG;
 
   return {
+    base: './',
     resolve: {
       alias: {
         '@': resolve(__dirname, 'src'),
@@ -90,10 +79,6 @@ export default defineConfig(({ command, mode, ssrBuild }) => {
           },
         },
       ]),
-      // Use Node.js API in the Renderer-process
-      renderer({
-        nodeIntegration: true,
-      }),
     ],
     server:
       process.env.VSCODE_DEBUG &&

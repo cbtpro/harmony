@@ -15,10 +15,24 @@
 -->
 
 <script setup lang="ts">
-
+import { Card, Descriptions, Tag } from 'ant-design-vue';
+import { version } from '../../package.json';
 </script>
 
 <template>
-  关于
+  <section class="page" aria-labelledby="about-title">
+    <div class="page-heading">
+      <div>
+        <h1 id="about-title">关于 Harmony</h1>
+        <p>本地文件管理与索引搜索</p>
+      </div>
+      <Tag color="blue">v{{ version }}</Tag>
+    </div>
+    <Card size="small" title="应用信息">
+      <Descriptions :column="1">
+        <Descriptions.Item label="支持平台">macOS、Linux、Windows</Descriptions.Item>
+        <Descriptions.Item label="文件索引">按名称搜索，索引规则保存在本机</Descriptions.Item>
+      </Descriptions>
+    </Card>
+  </section>
 </template>
-<style scoped></style>

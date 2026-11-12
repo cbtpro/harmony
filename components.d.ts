@@ -10,13 +10,12 @@ export {}
 declare module '@vue/runtime-core' {
   export interface GlobalComponents {
     CircleCloseButton: typeof import('./src/components/CircleCloseButton.vue')['default']
-    ElButton: typeof import('element-plus/es')['ElButton']
-    ElIcon: typeof import('element-plus/es')['ElIcon']
     HelloWorld: typeof import('./src/components/HelloWorld.vue')['default']
     Navigation: typeof import('./src/components/Navigation.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SearchBar: typeof import('./src/components/SearchBar.vue')['default']
+    SwitchTheme: typeof import('./src/components/SwitchTheme.vue')['default']
     TitleBar: typeof import('./src/components/TitleBar.vue')['default']
   }
 }

@@ -17,3 +17,17 @@ export const DATE_FMT_DD_MM_YYYY = 'DD/MM/YYYY';
 export const DATE_FMT_YYYY_MM_DD = 'YYYY/MM/DD';
 
 export const DATE_FMT_YYYY_MM_DD_HH_MM_SS = 'YYYY/MM/DD HH:mm:ss';
+
+/**
+ * 系统主题
+ */
+export enum Theme {
+  /** 浅色 */
+  LIGHT = 'light',
+  /** 深色 */
+  DARK = 'dark',
+  /** 自动 */
+  SYSTEM = 'system',
+};
+
+export const Themes = [Theme.LIGHT, Theme.DARK];

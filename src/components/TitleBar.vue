@@ -15,13 +15,30 @@
 -->
 
 <script setup lang="ts">
+import { ref } from 'vue';
+import { Search } from '@element-plus/icons-vue';
 import SearchBar from '@/components/SearchBar.vue';
+
+const keyword = ref<string>('');
 
 </script>
 
 <template>
   <div class="title-bar">
-    <search-bar />
+    <el-row :gutter="20">
+      <el-col :span="6">
+        <search-bar />
+      </el-col>
+      <el-col :span="6">
+        <el-input v-model="keyword" class="w-50 m-2" placeholder="搜索" :prefix-icon="Search" />
+      </el-col>
+      <el-col :span="6">
+        <el-input class="search-bar" placeholder="搜索" />
+      </el-col>
+      <el-col :span="6">
+        <switch-theme />
+      </el-col>
+    </el-row>
   </div>
 </template>
 

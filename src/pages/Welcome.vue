@@ -1,66 +1,186 @@
-<!--
- Copyright 2023 chenbitao
- 
- Licensed under the Apache License, Version 2.0 (the "License");
- you may not use this file except in compliance with the License.
- You may obtain a copy of the License at
- 
-     http://www.apache.org/licenses/LICENSE-2.0
- 
- Unless required by applicable law or agreed to in writing, software
- distributed under the License is distributed on an "AS IS" BASIS,
- WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- See the License for the specific language governing permissions and
- limitations under the License.
--->
-
 <script setup lang="ts">
-import HelloWorld from '@/components/HelloWorld.vue';
+import { onDeactivated, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { Alert, Button, Card, Empty, Input, Modal, Table, Tag } from 'ant-design-vue';
+import {
+  ArrowUpOutlined, FileOutlined, FolderOpenOutlined, FolderOutlined, HomeOutlined, LinkOutlined,
+  PlusOutlined, ReloadOutlined, SearchOutlined,
+} from '@ant-design/icons-vue';
+import type { FileEntry } from '../../shared/files';
+import FileContextMenu from '@/features/files/FileContextMenu.vue';
+import { useFileBrowser } from '@/features/files/useFileBrowser';
+import { useWorkspaceStatus } from '@/features/workspace/status';
 
+import { files } from '@/services/client';
+
+const browser = useFileBrowser(files);
+const { directory, address, query, busy, error, entries } = browser;
+const route = useRoute();
+const router = useRouter();
+const creating = ref(false);
+const folderName = ref('');
+const folderError = ref('');
+const trashEntry = ref<FileEntry>();
+const columns = [
+  { title: '名称', key: 'name' },
+  { title: '类型', key: 'kind', width: 92 },
+  { title: '操作', key: 'actions', width: 164 },
+];
+const kindLabels = { directory: '文件夹', file: '文件', link: '链接', other: '其他' };
+const kindIcons = { directory: FolderOutlined, file: FileOutlined, link: LinkOutlined, other: FileOutlined };
+const pagination = { pageSize: 25, hideOnSinglePage: true, showSizeChanger: false };
+
+useWorkspaceStatus(() => {
+  if (busy.value) return '正在处理文件';
+  if (!directory.value) return '';
+  return query.value.trim()
+    ? `匹配 ${entries.value.length} 项 · 共 ${directory.value.entries.length} 项`
+    : `${entries.value.length} 项`;
+});
+
+let appliedPath: string | null | undefined;
+watch([() => route.name, () => route.query.directory, busy], ([name, value, waiting]) => {
+  if (name !== 'files' || waiting) return;
+  const path = typeof value === 'string' ? value : null;
+  if (path === appliedPath) return;
+  appliedPath = path;
+  if (path !== directory.value?.path) void browser.navigate(path ?? undefined);
+}, { immediate: true });
+
+function goToDirectory(path?: string) {
+  if (path === route.query.directory) {
+    void browser.navigate(path);
+    return;
+  }
+  void router.push({ name: 'files', query: path ? { directory: path } : {} });
+}
+
+async function chooseDirectory() {
+  const previous = directory.value?.path;
+  await browser.choose();
+  const selected = directory.value?.path;
+  if (route.name === 'files' && selected && selected !== previous) goToDirectory(selected);
+}
+
+function openEntry(entry: FileEntry) {
+  if (entry.kind === 'directory') goToDirectory(entry.path);
+  else void browser.open(entry);
+}
+
+onDeactivated(() => {
+  creating.value = false;
+  trashEntry.value = undefined;
+});
+
+function showFolderDialog() {
+  folderName.value = '';
+  folderError.value = '';
+  creating.value = true;
+}
+
+async function createFolder() {
+  if (busy.value || !folderName.value.trim()) return;
+  await browser.create(folderName.value);
+  folderError.value = error.value;
+  if (!folderError.value) creating.value = false;
+}
+
+async function confirmTrash() {
+  const entry = trashEntry.value;
+  if (!entry || busy.value) return;
+  await browser.trash(entry);
+  trashEntry.value = undefined;
+}
 </script>
 
 <template>
-  <div>
-    <a href="https://www.electronjs.org/" target="_blank">
-      <img src="../assets/electron.svg" class="logo electron" alt="Electron logo" />
-    </a>
-    <a href="https://vitejs.dev/" target="_blank">
-      <img src="/vite.svg" class="logo" alt="Vite logo" />
-    </a>
-    <a href="https://vuejs.org/" target="_blank">
-      <img src="../assets/vue.svg" class="logo vue" alt="Vue logo" />
-    </a>
-  </div>
-  <hello-world msg="Electron + Vite + Vue" />
-  <div class="flex-center">
-    Place static files into the <code>/public</code> folder
-    <img style="width:5em;" src="/node.svg" alt="Node logo">
-  </div>
+  <section class="page files-page" aria-labelledby="files-title">
+    <div class="page-heading">
+      <h1 id="files-title">文件管理</h1>
+      <Button type="primary" :disabled="busy || !directory" @click="showFolderDialog">
+        <template #icon><PlusOutlined /></template>新建文件夹
+      </Button>
+    </div>
+
+    <Card size="small" class="directory-panel" aria-label="目录导航">
+      <div class="toolbar directory-actions">
+        <Button :disabled="busy" @click="goToDirectory()">
+          <template #icon><HomeOutlined /></template>主目录
+        </Button>
+        <Button :disabled="busy || !directory?.parent" @click="goToDirectory(directory?.parent ?? undefined)">
+          <template #icon><ArrowUpOutlined /></template>上一级
+        </Button>
+        <Button :disabled="busy" @click="chooseDirectory">
+          <template #icon><FolderOpenOutlined /></template>选择目录
+        </Button>
+        <Button :disabled="busy || !directory" @click="browser.navigate(directory?.path)">
+          <template #icon><ReloadOutlined /></template>刷新
+        </Button>
+      </div>
+      <form class="path-form" @submit.prevent="goToDirectory(address)">
+        <Input v-model:value="address" aria-label="目录路径" placeholder="输入目录的绝对路径"
+          required :disabled="busy">
+          <template #prefix><FolderOutlined /></template>
+        </Input>
+        <Button html-type="submit" :disabled="busy">前往</Button>
+      </form>
+    </Card>
+
+    <Alert v-if="error && !creating" role="alert" type="error" show-icon :message="error" />
+    <Card size="small" class="table-section">
+      <template #title><span class="table-title">目录内容</span></template>
+      <template #extra>
+        <Input v-model:value="query" class="table-filter" type="search" aria-label="筛选文件"
+          placeholder="筛选当前目录" allow-clear>
+          <template #prefix><SearchOutlined /></template>
+        </Input>
+      </template>
+      <FileContextMenu v-slot="{ row }" :disabled="busy" copy-file trash
+        @open-entry="openEntry" @copy-file="browser.copy" @trash-entry="trashEntry = $event">
+        <Table size="small" :columns="columns" :data-source="entries" row-key="path" :custom-row="row"
+          :pagination="pagination" :loading="busy" table-layout="fixed">
+          <template #emptyText><Empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="没有可显示的项目" /></template>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'name'">
+              <Button type="link" class="entry-link" :disabled="busy || record.kind === 'other'" @click="openEntry(record)">
+                <span class="file-label">
+                  <span class="entry-icon" :class="'entry-icon-' + record.kind">
+                    <component :is="kindIcons[record.kind as FileEntry['kind']]" aria-hidden="true" />
+                  </span>
+                  <span class="file-name">{{ record.name }}</span>
+                </span>
+              </Button>
+            </template>
+            <template v-else-if="column.key === 'kind'">
+              <Tag :color="record.kind === 'directory' ? 'blue' : undefined">{{ kindLabels[record.kind as FileEntry['kind']] }}</Tag>
+            </template>
+            <template v-else-if="column.key === 'actions'">
+              <Button v-if="record.kind === 'file'" size="small" type="text" class="file-action"
+                :disabled="busy" @click="browser.copy(record)">复制到…</Button>
+              <Button size="small" type="text" class="file-action" :disabled="busy"
+                @click="trashEntry = record">移到废纸篓</Button>
+            </template>
+          </template>
+        </Table>
+      </FileContextMenu>
+    </Card>
+
+    <Modal v-model:open="creating" title="新建文件夹" ok-text="新建" :confirm-loading="busy"
+      :ok-button-props="{ disabled: !folderName.trim() }" @ok="createFolder">
+      <form @submit.prevent="createFolder">
+        <Input v-model:value="folderName" aria-label="文件夹名称" placeholder="输入文件夹名称" :disabled="busy" />
+      </form>
+      <Alert v-if="folderError" role="alert" class="dialog-error" type="error" show-icon :message="folderError" />
+    </Modal>
+    <Modal :open="!!trashEntry" title="移到废纸篓" ok-text="移到废纸篓" :confirm-loading="busy"
+      :ok-button-props="{ danger: true }" @ok="confirmTrash" @cancel="trashEntry = undefined">
+      <p>将「{{ trashEntry?.name }}」移到系统废纸篓？</p>
+    </Modal>
+  </section>
 </template>
 
 <style scoped>
-.flex-center {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-
-.logo.electron:hover {
-  filter: drop-shadow(0 0 2em #9FEAF9);
-}
-
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-
-.logo.vue:hover {
-  filter: drop-shadow(0 0 2em #42b883aa);
-}
+.entry-link.ant-btn { max-width: 100%; height: auto; padding: 2px 0; text-align: left; white-space: normal; }
+.entry-link.ant-btn .file-label { display: inline-flex; }
+.dialog-error { margin-top: 12px; }
 </style>

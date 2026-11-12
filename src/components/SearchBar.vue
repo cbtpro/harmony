@@ -18,7 +18,7 @@
 </script>
 
 <template>
-    <input class="search-bar" placeholder="搜索" />
+    <el-button>我是 ElButton</el-button>
 </template>
 
 <style scoped>

@@ -9,12 +9,14 @@
     }
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "node --experimental-strip-types --disable-warning=ExperimentalWarning --test tests/files.test.mts tests/file-browser.test.mts tests/file-index.test.mts tests/terminals.test.mts tests/media.test.mts",
     "dev": "vite",
     "dev:staging": "vite --mode staging",
-    "build": "vue-tsc --noEmit && vite build && electron-builder",
+    "build": "npm run build:app && electron-builder --publish never",
     "build:staging": "vue-tsc --noEmit && vite --mode staging build && electron-builder",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test:ui": "playwright test",
+    "build:app": "vue-tsc --noEmit && vite build"
   },
   "repository": {
     "type": "git",
@@ -34,18 +36,20 @@
   },
   "homepage": "https://github.com/cbtpro/harmony#readme",
   "devDependencies": {
+    "@playwright/test": "1.57.0",
     "@vitejs/plugin-vue": "^4.0.0",
-    "electron": "^23.1.1",
-    "electron-builder": "^23.6.0",
+    "electron": "39.8.5",
+    "electron-builder": "26.8.1",
     "typescript": "^4.9.5",
     "unplugin-auto-import": "^0.15.0",
     "unplugin-vue-components": "^0.24.0",
     "vite": "^4.1.4",
     "vite-plugin-electron": "^0.11.1",
-    "vite-plugin-electron-renderer": "^0.12.1",
     "vue-tsc": "^1.2.0"
   },
   "dependencies": {
+    "@ant-design/icons-vue": "^7.0.1",
+    "ant-design-vue": "^4.2.6",
     "dayjs": "^1.11.7",
     "element-plus": "^2.2.32",
     "pinia": "^2.0.32",
