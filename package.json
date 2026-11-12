@@ -29,7 +29,10 @@
     "文件管理",
     "跨平台"
   ],
-  "author": "陈碧滔 cbtpro@163.com",
+  "author": {
+    "name": "陈碧滔",
+    "email": "cbtpro@163.com"
+  },
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/cbtpro/harmony/issues"

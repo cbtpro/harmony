@@ -56,4 +56,23 @@ UI 测试通过 Playwright 启动真实的 Electron 窗口，并在临时目录�
 
 ## 打包
 
-在目标操作系统上运行 `npm run build`。产物位于 `release/`。GitHub Actions 分别在 macOS、Linux 和 Windows 上运行测试与构建，生成 DMG、AppImage/DEB 和 NSIS 安装包。正式分发时可配置相应平台的签名证书。
+在目标操作系统上运行 `npm run build`，产物位于 `release/`。推送到 `main` 或手动运行 `Build and Release` 后，可以在 Actions 的运行记录里下载安装包。
+
+### 发布版本
+
+将 `package.json` 和 `package-lock.json` 的版本更新后提交到 `main`。推送与 `package.json` 版本一致的 `v` 标签，例如版本为 `1.0.0` 时使用 `v1.0.0`。
+
+```sh
+git tag -a v1.0.0 -m 'Harmony v1.0.0'
+git push origin v1.0.0
+```
+
+跨平台测试与打包全部通过后，工作流会自动创建 GitHub Release，附上变更说明和 `SHA256SUMS`。带预发布后缀的版本会标记为预发布版本。
+
+| 平台 | 架构 | 安装包 |
+| --- | --- | --- |
+| macOS | Apple Silicon（arm64）、Intel（x64） | DMG |
+| Linux | x64 | AppImage、DEB |
+| Windows | x64 | NSIS 安装程序（EXE） |
+
+当前流程未配置正式签名证书，macOS 安装包未公证。

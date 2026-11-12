@@ -12,7 +12,7 @@
     "dist"
   ],
   "mac": {
-    "artifactName": "${productName}_${version}.${ext}",
+    "artifactName": "${productName}_${version}_mac_${arch}.${ext}",
     "target": [
       "dmg"
     ]
@@ -27,10 +27,11 @@
         ]
       }
     ],
-    "artifactName": "${productName}_${version}.${ext}"
+    "artifactName": "${productName}_${version}_windows_${arch}.${ext}"
   },
   "linux": {
     "target": ["AppImage", "deb"],
+    "artifactName": "${productName}_${version}_linux_${arch}.${ext}",
     "category": "Utility"
   },
   "nsis": {
