@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { setTimeout } from 'node:timers/promises';
 import { registerHooks } from 'node:module';
 import type { FileIndex as Index } from '../electron/main/search/file-index';
+import type { IndexCompletion } from '../electron/main/search/index-automation';
 
 // Node's test runner needs extensions that Vite resolves during the app build.
 const hooks = registerHooks({
@@ -19,7 +20,8 @@ const hooks = registerHooks({
 });
 const { FileIndex } = await import('../electron/main/search/file-index.ts');
 const { IndexAutomation } = await import('../electron/main/search/index-automation.ts');
-const { INDEX_LIMITS } = await import('../electron/main/search/scan.ts');
+const { IndexStorage } = await import('../electron/main/search/index-storage.ts');
+const { INDEX_TUNING } = await import('../electron/main/search/scan.ts');
 const { quickKind, quickSearch } = await import('../electron/main/search/quick-search.ts');
 hooks.deregister();
 
@@ -49,35 +51,48 @@ test('indexes nested names and canonicalizes queries without following links or 
 
   const index = new FileIndex();
   index.configure({ roots: [root], excluded: [] });
-  index.rebuild();
+  index.rebuild([], undefined, 3);
   await waitForPhase(index, 'ready');
-  const { matches } = index.search(' CAFÉ ');
+  const { matches } = await index.search(' CAFÉ ');
   assert.equal(matches.length, 1);
   assert.equal(matches[0].directory, sub);
   assert.equal(index.status().count, 2);
-  assert.deepEqual(index.search(''), { matches: [], truncated: false });
-  assert.throws(() => index.search('x'.repeat(129)), /128/);
+  assert.deepEqual(await index.search(''), { matches: [], truncated: false });
+  await assert.rejects(index.search('x'.repeat(129)), /128/);
   index.configure({ roots: [], excluded: [] });
   assert.equal(index.status().count, 0);
-  assert.equal(index.search('CAFÉ').matches.length, 0);
+  assert.equal((await index.search('CAFÉ')).matches.length, 0);
 });
 
-test('bounds index entries, search results, memory estimates and skipped scanning work', async t => {
+test('scans beyond the old entry cap and still bounds each search response', async t => {
   const root = await fixture(t);
-  await Promise.all(['a', 'b', 'c'].map(name => writeFile(join(root, `match-${name}`), '')));
-  for (const [limits, count] of [
-    [{ entries: 2 }, 2],
-    [{ estimatedBytes: 1 }, 0],
-    [{ steps: 2 }, 1],
-  ] as const) {
-    const index = new FileIndex({ ...INDEX_LIMITS, results: 1, ...limits });
+  const folders = 50;
+  const filesPerFolder = 500;
+  for (let directory = 0; directory < folders; directory++) {
+    const folder = join(root, `folder-${directory}`);
+    await mkdir(folder);
+    for (let start = 0; start < filesPerFolder; start += 32) {
+      await Promise.all(Array.from({ length: Math.min(32, filesPerFolder - start) }, (_, offset) =>
+        writeFile(join(folder, `match-${start + offset}.txt`), '')));
+    }
+  }
+  await writeFile(join(root, 'folder-49', 'tail-marker.txt'), '');
+
+  const index = new FileIndex({ ...INDEX_TUNING, results: 1 }, join(root, '.cache', 'index.sqlite'));
+  try {
     index.configure({ roots: [root], excluded: [] });
-    index.rebuild();
-    await waitForPhase(index, 'limited');
-    assert.equal(index.status().count, count);
-    const result = index.search('match');
-    assert.equal(result.matches.length, Math.min(1, count));
-    assert.equal(result.truncated, count > 1);
+    const start = performance.now();
+    index.rebuild([], undefined, 3);
+    await index.whenIdle();
+    t.diagnostic(`Indexed ${index.status().count} entries in ${Math.round(performance.now() - start)} ms using 3 threads`);
+    assert.equal(index.status().phase, 'ready');
+    assert.equal(index.status().count, folders * (filesPerFolder + 1) + 1);
+    assert.equal((await index.search('tail-marker')).matches[0]?.name, 'tail-marker.txt');
+    const result = await index.search('match');
+    assert.equal(result.matches.length, 1);
+    assert.equal(result.truncated, true);
+  } finally {
+    index.dispose();
   }
 });
 
@@ -118,23 +133,33 @@ test('automatically refreshes its default home and saves blacklist changes', asy
   await writeFile(join(excluded, 'secret.txt'), '');
   const timing = { startup: 5, ruleChange: 5, refresh: 100 };
   const index = new FileIndex();
-  const automation = new IndexAutomation(index, settings, home, timing);
+  const completions: IndexCompletion[] = [];
+  const automation = new IndexAutomation(index, settings, home, timing, undefined,
+    completion => { completions.push(completion); });
   t.after(() => automation.close());
 
   await automation.open();
   await waitForPhase(index, 'ready');
-  assert.equal(index.search('secret').matches.length, 1);
+  assert.equal((await index.search('secret')).matches.length, 1);
+  assert.deepEqual(completions, [{ count: 2, skipped: 0 }]);
   await writeFile(join(home, 'new-file.txt'), '');
-  for (let attempt = 0; attempt < 200 && !index.search('new-file').matches.length; attempt++) {
+  for (let attempt = 0; attempt < 200 && !(await index.search('new-file')).matches.length; attempt++) {
     await setTimeout(5);
   }
-  assert.equal(index.search('new-file').matches.length, 1);
+  assert.equal((await index.search('new-file')).matches.length, 1);
+  await index.whenIdle();
+  assert.equal(completions.length, 1);
 
-  await assert.rejects(automation.changeRule('roots', 'add', excluded), /重叠/);
+  await automation.changeRule('roots', 'add', excluded);
+  await waitForPhase(index, 'ready');
+  assert.equal(index.status().count, 3);
+  assert.equal((await index.search('secret')).matches.length, 1);
   await automation.changeRule('excluded', 'add', excluded);
-  assert.equal(index.search('secret').matches.length, 0);
+  assert.equal((await index.search('secret')).matches.length, 0);
   await waitForPhase(index, 'ready');
   assert.equal(index.status().count, 1);
+  assert.deepEqual(completions.at(-1), { count: 1, skipped: 0 });
+  assert.equal(completions.length, 3);
   assert.deepEqual(JSON.parse(await readFile(settings, 'utf8')).excluded, [excluded]);
   automation.close();
 
@@ -143,16 +168,153 @@ test('automatically refreshes its default home and saves blacklist changes', asy
   t.after(() => restored.close());
   await restored.open();
   await waitForPhase(reopened, 'ready');
-  assert.equal(reopened.search('secret').matches.length, 0);
+  assert.equal((await reopened.search('secret')).matches.length, 0);
 
   // A blacklist entry can also exclude an entire whitelisted root.
   await restored.changeRule('excluded', 'add', home);
   await waitForPhase(reopened, 'ready');
   assert.equal(reopened.status().count, 0);
   await restored.changeRule('roots', 'remove', home);
+  await restored.changeRule('roots', 'remove', excluded);
   assert.deepEqual((await restored.status()).roots, []);
   await setTimeout(20);
   assert.equal(reopened.status().phase, 'idle');
+});
+
+test('persists a paused scan and resumes only after continuing from its saved directory queue', async t => {
+  const root = await fixture(t);
+  const home = join(root, 'workspace');
+  const cache = join(root, 'cache', 'index.sqlite');
+  const paths = ['alpha', 'beta', 'gamma'].map(name => join(home, name));
+  for (const [number, directory] of paths.entries()) {
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, `checkpoint-${number}.txt`), '');
+  }
+
+  const index = new FileIndex(INDEX_TUNING, cache);
+  const rules = { roots: [home], excluded: [] };
+  let partial: number;
+  try {
+    index.configure(rules);
+    let opened = 0;
+    index.rebuild([], () => { if (++opened === 3) index.pause(); });
+    await waitForPhase(index, 'paused');
+    partial = index.status().count;
+    assert.ok(partial >= 4 && partial < 6);
+  } finally {
+    const closing = index.whenIdle();
+    index.dispose();
+    await closing;
+  }
+
+  const snapshot = new IndexStorage(cache);
+  try {
+    assert.equal(snapshot.checkpoint()?.phase, 'paused');
+    assert.equal(snapshot.completedDirectories(10).length, 3);
+  } finally {
+    snapshot.close();
+  }
+
+  const restored = new FileIndex(INDEX_TUNING, cache);
+  try {
+    restored.configure(rules);
+    assert.equal(restored.rebuild([], undefined, 2, 'restore').phase, 'paused');
+    assert.equal(restored.status().count, partial);
+    assert.equal(restored.status().resumable, true);
+    restored.rebuild([], undefined, 2, 'continue');
+    await restored.whenIdle();
+    assert.equal(restored.status().phase, 'ready');
+    assert.equal(restored.status().resumable, false);
+    assert.equal(restored.status().count, 6);
+    assert.equal((await restored.search('checkpoint-')).matches.length, 3);
+  } finally {
+    restored.dispose();
+  }
+});
+
+test('validates and persists the index thread count separately from scan progress', async t => {
+  const root = await fixture(t);
+  const file = join(root, 'rules.json');
+  const automation = new IndexAutomation(new FileIndex(), file, root);
+  const settings = await automation.settings();
+  assert.equal(settings.maxThreads, Math.max(1, settings.systemThreads - 1));
+  await assert.rejects(automation.setThreads(settings.maxThreads + 1), /索引线程数/);
+  await assert.rejects(automation.setThreads(1.5), /索引线程数/);
+  await automation.setThreads(1);
+  const reopened = new IndexAutomation(new FileIndex(), file, root);
+  assert.equal((await reopened.settings()).threads, 1);
+  assert.deepEqual((await reopened.status()).roots, [root]);
+});
+
+test('reports a manual rebuild and ignores an index stopped by the user', async t => {
+  const root = await fixture(t);
+  const home = join(root, 'home');
+  await mkdir(home);
+  await Promise.all(['one', 'two'].map(name => writeFile(join(home, name), '')));
+  const index = new FileIndex();
+  const completions: IndexCompletion[] = [];
+  const automation = new IndexAutomation(index, join(root, 'rules.json'), home,
+    { startup: 60_000, ruleChange: 60_000, refresh: 60_000 }, undefined,
+    completion => { completions.push(completion); });
+  t.after(() => automation.close());
+
+  await automation.open();
+  await automation.rebuild();
+  await index.whenIdle();
+  assert.deepEqual(completions, [{ count: 2, skipped: 0 }]);
+
+  const pending = Promise.withResolvers<void>();
+  const foreground = index.prioritize(() => pending.promise);
+  try {
+    await automation.rebuild();
+    await automation.stop();
+  } finally {
+    pending.resolve();
+    await foreground;
+  }
+  await index.whenIdle();
+  assert.equal(index.status().phase, 'stopped');
+  assert.equal(completions.length, 1);
+});
+
+test('uses native directory events to update names and subtrees before a scheduled scan', async t => {
+  const root = await fixture(t);
+  const home = join(root, 'home');
+  const staging = join(root, 'staging');
+  const incoming = join(home, 'incoming');
+  const excluded = join(home, 'private');
+  const settings = join(root, 'rules.json');
+  await Promise.all([mkdir(excluded, { recursive: true }), mkdir(join(staging, 'deep'), { recursive: true })]);
+  await writeFile(join(staging, 'deep', 'watch-original.txt'), '');
+  await writeFile(settings, JSON.stringify({ version: 1, roots: [home], excluded: [excluded] }));
+
+  const index = new FileIndex({ ...INDEX_TUNING, batchDelayMs: 0 });
+  const completions: IndexCompletion[] = [];
+  const automation = new IndexAutomation(index, settings, home,
+    { startup: 5, ruleChange: 5, refresh: 60_000 }, undefined,
+    completion => { completions.push(completion); });
+  t.after(() => { automation.close(); index.dispose(); });
+  await automation.open();
+  await waitForPhase(index, 'ready');
+
+  async function expectMatches(query: string, names: string[]) {
+    for (let attempt = 0; attempt < 250; attempt++) {
+      const actual = (await index.search(query)).matches.map(match => match.name).sort();
+      if (JSON.stringify(actual) === JSON.stringify(names)) return;
+      await setTimeout(20);
+    }
+    assert.deepEqual((await index.search(query)).matches.map(match => match.name).sort(), names);
+  }
+
+  await rename(staging, incoming);
+  await expectMatches('watch-', ['watch-original.txt']);
+  await rename(join(incoming, 'deep', 'watch-original.txt'), join(incoming, 'deep', 'watch-renamed.txt'));
+  await writeFile(join(excluded, 'watch-hidden.txt'), '');
+  await expectMatches('watch-', ['watch-renamed.txt']);
+  await rm(incoming, { recursive: true });
+  await expectMatches('watch-', []);
+  assert.equal(index.status().count, 0);
+  assert.deepEqual(completions, [{ count: 0, skipped: 0 }]);
 });
 
 test('keeps automatic indexing off if saved settings cannot be read', async t => {
@@ -184,21 +346,21 @@ test('searches explicitly indexed volumes without crossing unselected mount boun
   index.configure({ roots: [system, external], excluded: [] });
   index.rebuild([system, external, other]);
   await waitForPhase(index, 'ready');
-  assert.deepEqual(index.search('match').matches.map(match => match.name).sort(),
+  assert.deepEqual((await index.search('match')).matches.map(match => match.name).sort(),
     ['match-external.txt', 'match-system.txt']);
 });
 
-test('quick search gives each result type its own limit and prioritizes exact and prefix matches', () => {
+test('quick search gives each result type its own limit and prioritizes exact and prefix matches', async () => {
   const files = Array.from({ length: 12 }, (_, index) => ({
     name: `old-demo-${index}.txt`, path: `/files/old-demo-${index}.txt`, kind: 'file' as const,
   }));
-  const result = quickSearch([
+  const result = await quickSearch(() => [[
     ...files,
     { name: 'demo.txt', path: '/files/demo.txt', kind: 'file' },
     { name: 'demo', path: '/files/demo', kind: 'file' },
     { name: 'demo folder', path: '/files/demo folder', kind: 'directory' },
     { name: 'demo.JPG', path: '/files/demo.JPG', kind: 'file' },
-  ], 'DEMO');
+  ]], 'DEMO');
 
   assert.deepEqual(result.map(group => group.kind), ['folder', 'image', 'file']);
   assert.equal(result[2].matches.length, 5);

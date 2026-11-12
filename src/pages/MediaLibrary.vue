@@ -204,7 +204,7 @@ onDeactivated(() => {
         <h1 id="media-title">媒体库</h1>
         <p v-if="status?.phase === 'running'">索引正在更新，媒体会逐步显示。</p>
         <p v-else-if="status?.phase === 'paused'">索引已暂停</p>
-        <p v-else>{{ total }} 项媒体<span v-if="status?.phase === 'limited'"> · 索引已达上限</span></p>
+        <p v-else>{{ total }} 项媒体</p>
       </div>
       <Space wrap>
         <RouterLink :to="{ name: 'search' }">索引设置</RouterLink>

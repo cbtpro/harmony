@@ -1,7 +1,7 @@
 import type { DisksApi } from '../../shared/disks';
 import type { MediaApi } from '../../shared/media';
 import type { FilesApi, Result } from '../../shared/files';
-import type { QuickSearchApi, SearchApi } from '../../shared/search';
+import type { IndexSettings, QuickSearchApi, SearchApi } from '../../shared/search';
 import type { TerminalsApi } from '../../shared/terminals';
 
 type DesktopBridge = { request(name: string, args: unknown[]): Promise<Result<unknown>> };
@@ -82,6 +82,11 @@ export const search: SearchApi = {
 export const quickSearch: QuickSearchApi = {
   find: query => request('search:quick', query),
   open: path => request('search:open-quick', path),
+};
+
+export const indexSettings = {
+  get: () => request<IndexSettings>('search:settings'),
+  save: (threads: number) => request<IndexSettings>('search:set-threads', threads),
 };
 
 export const disks: DisksApi = {

@@ -10,6 +10,7 @@ import { absolutePath, createFolder, duplicateFile, entryPath, listDirectory } f
 import { createMediaLibrary } from './media/library';
 import { FileIndex } from './search/file-index';
 import { IndexAutomation } from './search/index-automation';
+import type { IndexCompletion } from './search/index-automation';
 import { createTerminalService } from './terminals';
 import { quickKind, quickSearch } from './search/quick-search';
 import { isWithin } from './search/scan';
@@ -20,6 +21,7 @@ interface PlatformActions {
   reveal(path: string): void;
   copyPath(path: string): void;
   trash(path: string): Promise<void>;
+  onIndexComplete(completion: IndexCompletion): void;
 }
 
 const messages: Record<string, string> = {
@@ -36,12 +38,12 @@ const run = promisify(execFile);
 export type Dispatch = (name: string, args: unknown[]) => Promise<Result<unknown>>;
 
 export function createEngine(home: string, rulesFile: string, platform: PlatformActions) {
-  const index = new FileIndex();
+  const index = new FileIndex(undefined, join(dirname(rulesFile), '.harmony-index', 'files.sqlite'));
   const media = createMediaLibrary(index, join(dirname(rulesFile), 'media-metadata.json'));
   const terminals = createTerminalService(home);
   const mounts = () => discoverMounts(home);
   const mountPaths = async () => (await mounts().catch(() => [])).map(mount => mount.path);
-  const automation = new IndexAutomation(index, rulesFile, home, undefined, mountPaths);
+  const automation = new IndexAutomation(index, rulesFile, home, undefined, mountPaths, platform.onIndexComplete);
 
   async function choose(value: unknown) {
     if (value === undefined) return platform.chooseDirectory();
@@ -52,7 +54,7 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
 
   async function addRule(list: keyof IndexRules, value: unknown) {
     const path = await choose(value);
-    return path ? automation.changeRule(list, 'add', path, await mountPaths()) : automation.status();
+    return path ? automation.changeRule(list, 'add', path) : automation.status();
   }
 
   async function listDisks(): Promise<Disk[]> {
@@ -75,7 +77,7 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
     const path = absolutePath(value);
     const paths = await mountPaths();
     if (!paths.includes(path)) throw new Error('磁盘已卸载或无法访问。');
-    await automation.changeRule('roots', 'add', path, paths);
+    await automation.changeRule('roots', 'add', path);
   }
 
   async function openPath(path: string) {
@@ -85,7 +87,7 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
 
   async function openQuickResult(value: unknown) {
     const path = absolutePath(value);
-    const entry = index.indexedEntries().find(item => item.path === path);
+    const entry = index.findIndexedPath(path);
     if (!entry) throw new Error('该项目已不在搜索索引中，请重新搜索。');
     const kind = quickKind(entry);
     if (kind === 'folder') throw new Error('请在文件页面浏览目录。');
@@ -130,10 +132,12 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
     ['search:remove-excluded', path => automation.changeRule('excluded', 'remove', path)],
     ['search:rebuild', () => automation.rebuild()],
     ['search:pause', () => index.pause()],
-    ['search:resume', () => index.resume()],
+    ['search:resume', () => automation.resume()],
+    ['search:settings', () => automation.settings()],
+    ['search:set-threads', value => automation.setThreads(value)],
     ['search:stop', () => automation.stop()],
     ['search:find', query => index.search(query)],
-    ['search:quick', query => quickSearch(index.indexedEntries(), query)],
+    ['search:quick', query => quickSearch(term => index.batches(term), query)],
     ['search:open-quick', path => index.prioritize(() => openQuickResult(path))],
     ['disks:list', () => index.prioritize(listDisks)],
     ['disks:index', path => index.prioritize(() => indexDisk(path))],
@@ -152,5 +156,12 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
     }
   };
 
-  return { dispatch, open: () => automation.open(), close: () => automation.close() };
+  return {
+    dispatch,
+    open: () => automation.open(),
+    close() {
+      automation.close();
+      index.dispose();
+    },
+  };
 }

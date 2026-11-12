@@ -10,9 +10,17 @@ export interface IndexRules {
 export interface IndexStatus extends IndexRules {
   revision: number;
   settingsWarning?: string;
-  phase: 'idle' | 'running' | 'paused' | 'stopping' | 'ready' | 'limited' | 'stopped' | 'failed';
+  phase: 'idle' | 'running' | 'paused' | 'stopping' | 'ready' | 'stopped' | 'failed';
+  failure?: string;
+  resumable?: boolean;
   count: number;
   skipped: number;
+}
+
+export interface IndexSettings {
+  threads: number;
+  maxThreads: number;
+  systemThreads: number;
 }
 
 export interface SearchMatch extends FileEntry {

@@ -16,6 +16,7 @@ import { app, BrowserWindow, clipboard, dialog, shell } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import { createEngine } from './engine';
 import { registerIpc } from './ipc';
+import { configureSystemNotifications, showSystemNotification } from './notifications';
 import { startWebServer } from './web-server';
 
 const userData = app.commandLine.getSwitchValue('user-data-dir');
@@ -32,6 +33,13 @@ const engine = createEngine(app.getPath('home'), join(app.getPath('userData'), '
   reveal: path => shell.showItemInFolder(path),
   copyPath: path => clipboard.writeText(path),
   trash: path => shell.trashItem(path),
+  onIndexComplete({ count, skipped }) {
+    const detail = skipped ? `有 ${skipped.toLocaleString('zh-CN')} 个目录未能完整读取。` : '';
+    showSystemNotification({
+      title: 'Harmony 索引已完成',
+      body: `已索引 ${count.toLocaleString('zh-CN')} 个文件和文件夹。${detail}`,
+    });
+  },
 });
 const assets = join(__dirname, '../../dist');
 const devUrl = app.isPackaged ? undefined : process.env.VITE_DEV_SERVER_URL;
@@ -62,6 +70,7 @@ function createWindow() {
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
+  configureSystemNotifications();
   registerIpc(() => window, async (name, args) => {
     if (name !== 'web:open') return engine.dispatch(name, args);
     if (!web) return { ok: false, message: '网页服务未能启动。' };

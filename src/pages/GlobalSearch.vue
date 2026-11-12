@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Alert, Badge, Button, Card, Collapse, Empty, Input, Table, Tag } from 'ant-design-vue';
 import { FileOutlined, FolderOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons-vue';
@@ -25,7 +25,7 @@ const columns = [
 const pagination = { pageSize: 20, hideOnSinglePage: true, showSizeChanger: false };
 const phaseBadge: Record<IndexStatus['phase'], 'default' | 'processing' | 'success' | 'warning' | 'error'> = {
   idle: 'default', running: 'processing', paused: 'warning', stopping: 'processing',
-  ready: 'success', limited: 'warning', stopped: 'default', failed: 'error',
+  ready: 'success', stopped: 'default', failed: 'error',
 };
 
 function routeQuery(value: unknown) {
@@ -58,12 +58,12 @@ const phaseText = {
   paused: '索引已暂停',
   stopping: '正在停止索引',
   ready: '索引已完成',
-  limited: '已达到资源上限，当前索引覆盖部分项目',
   stopped: '本次索引已停止，保留已收录的项目',
   failed: '索引未能完成，可重新建立',
 };
 
-useWorkspaceStatus(() => `${phaseText[status.value.phase]} · 已收录 ${status.value.count} 项`);
+const indexStatusText = computed(() => status.value.failure ?? phaseText[status.value.phase]);
+useWorkspaceStatus(() => `${indexStatusText.value} · 已收录 ${status.value.count} 项`);
 
 function openLocation(entry: FileEntry) {
   const directory = entry.kind === 'directory' ? entry.path : 'directory' in entry ? entry.directory : undefined;
@@ -136,12 +136,12 @@ async function openFile(path: string) {
       <Collapse class="index-panel" :default-active-key="['index']">
         <Collapse.Panel key="index" header="文件索引">
           <template #extra>
-            <span role="status"><Badge :status="phaseBadge[status.phase]" :text="phaseText[status.phase]" /></span>
+            <span role="status"><Badge :status="phaseBadge[status.phase]" :text="indexStatusText" /></span>
           </template>
           <Alert v-if="status.settingsWarning" role="alert" class="index-alert" type="warning" show-icon :message="status.settingsWarning" />
           <p class="index-description">
             已收录 {{ status.count }} 项<span v-if="status.skipped">，{{ status.skipped }} 个目录未能完整读取</span>。
-            规则自动保存，黑名单优先。
+            规则自动保存，白名单重叠时只扫描一次，黑名单优先。
           </p>
           <div class="index-rules">
             <div v-for="rule in [
@@ -168,6 +168,8 @@ async function openFile(path: string) {
             <Button size="small" :disabled="busy || active || !status.roots.length" @click="command('rebuild')">立即重建索引</Button>
             <Button v-if="status.phase === 'running'" size="small" :disabled="busy" @click="command('pause')">暂停索引</Button>
             <Button v-if="status.phase === 'paused'" size="small" :disabled="busy" @click="command('resume')">继续索引</Button>
+            <Button v-if="status.resumable && ['stopped', 'failed'].includes(status.phase)" size="small"
+              :disabled="busy" @click="command('resume')">从断点继续</Button>
             <Button v-if="active" size="small" :disabled="busy || status.phase === 'stopping'"
               @click="command('stop')">停止本次索引</Button>
           </div>

@@ -59,6 +59,7 @@ test('shares the engine with the webpage and denies unauthenticated requests', a
       await expect(desktop.getByRole('button', { name: 'Web 创建' })).toBeVisible();
 
       await web.getByRole('link', { name: '媒体库' }).click();
+      await expect(web.getByRole('heading', { name: '媒体库', exact: true })).toBeVisible();
       await expect(web.getByRole('row').filter({ hasText: 'shared-file.txt' })).toBeVisible({ timeout: 12000 });
       await web.clock.install();
       await web.clock.pauseAt(new Date(Date.now() + 1000));

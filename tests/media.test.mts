@@ -62,8 +62,8 @@ test('queries a media catalog, refuses collisions and preserves metadata on rena
   assert.equal(renamed.path, join(folder, 'New handbook.EPUB'));
   assert.equal(await readFile(renamed.path, 'utf8'), 'book data');
   await assert.rejects(readFile(original), { code: 'ENOENT' });
-  assert.equal(index.search('new handbook').matches[0]?.path, renamed.path);
-  assert.equal(index.search('read me').matches.length, 0);
+  assert.equal((await index.search('new handbook')).matches[0]?.path, renamed.path);
+  assert.equal((await index.search('read me')).matches.length, 0);
 
   const reopened = createMediaLibrary(index, file);
   const result = await reopened.list({ query: 'catalog handbook', category: 'all' });

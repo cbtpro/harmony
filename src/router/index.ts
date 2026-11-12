@@ -48,6 +48,12 @@ export const workspaceRoutes = [
     component: () => import('@/pages/GlobalSearch.vue'),
   },
   {
+    path: '/settings',
+    name: 'settings',
+    meta: { title: '设置', cacheName: 'Settings' },
+    component: () => import('@/pages/Settings.vue'),
+  },
+  {
     path: '/about',
     name: 'about',
     meta: { title: '关于', cacheName: 'About' },

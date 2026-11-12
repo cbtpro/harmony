@@ -1,5 +1,5 @@
 import { test, expect, _electron as electron } from '@playwright/test';
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -22,16 +22,40 @@ test('indexes automatically, enforces both lists and restores rules on restart',
       env: { ...process.env, VITE_DEV_SERVER_URL: '' },
     });
     const app = await launch();
+    let savedThreads = '1';
     try {
       const page = await app.firstWindow();
+      await page.getByRole('link', { name: '设置', exact: true }).click();
+      await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
+      const threads = page.getByRole('spinbutton', { name: '索引线程数' });
+      await expect(threads).toBeVisible();
+      const previous = await threads.inputValue();
+      const max = Number(await threads.getAttribute('aria-valuemax'));
+      savedThreads = previous === '1' && max > 1 ? '2' : '1';
+      if (previous !== savedThreads) {
+        await threads.fill(savedThreads);
+        await page.getByRole('button', { name: '保存设置' }).click();
+        await expect(page.getByRole('status')).toHaveText('设置已保存');
+      }
+      const settingsTab = page.getByRole('tab', { name: '设置', exact: true });
+      await page.locator('.ant-tabs-tab').filter({ has: settingsTab }).getByRole('button', { name: '关闭标签' }).click();
+      await expect(settingsTab).toHaveCount(0);
       await page.getByRole('link', { name: '全局搜索' }).click();
       await expect(page.getByRole('button', { name: '立即重建索引' })).toBeDisabled();
-      await app.evaluate(({ dialog }, path) => {
+      await app.evaluate(({ dialog, Notification }, path) => {
         dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [path] });
+        Notification.isSupported = () => true;
+        Notification.prototype.show = function () {
+          const delivered = JSON.parse(process.env.HARMONY_INDEX_NOTIFICATIONS ?? '[]');
+          delivered.push({ title: this.title, body: this.body, silent: this.silent });
+          process.env.HARMONY_INDEX_NOTIFICATIONS = JSON.stringify(delivered);
+        };
       }, root);
       await page.getByRole('button', { name: '添加白名单目录' }).click();
       await expect(page.getByRole('list', { name: '白名单' })).toContainText(root);
       await expect(page.getByRole('status')).toContainText('索引已完成');
+      await expect.poll(() => app.evaluate(() => JSON.parse(process.env.HARMONY_INDEX_NOTIFICATIONS ?? '[]')))
+        .toEqual([{ title: 'Harmony 索引已完成', body: '已索引 4 个文件和文件夹。', silent: true }]);
 
       await page.getByRole('searchbox', { name: '搜索已索引的文件' }).fill('project');
       const privateResult = page.getByRole('row').filter({ hasText: 'Project-secret.txt' });
@@ -73,6 +97,8 @@ test('indexes automatically, enforces both lists and restores rules on restart',
     const reopened = await launch();
     try {
       const page = await reopened.firstWindow();
+      await page.getByRole('link', { name: '设置', exact: true }).click();
+      await expect(page.getByRole('spinbutton', { name: '索引线程数' })).toHaveValue(savedThreads);
       const topSearch = page.getByRole('combobox', { name: '顶部全局搜索' });
       await expect(topSearch).toBeVisible();
       await page.keyboard.press('Control+k');
@@ -85,6 +111,16 @@ test('indexes automatically, enforces both lists and restores rules on restart',
       await expect(page.getByRole('searchbox', { name: '搜索已索引的文件' })).toHaveValue('project');
       await expect(page.getByRole('row').filter({ hasText: 'Project-2026.txt' })).toBeVisible();
       await expect(page.getByRole('row').filter({ hasText: 'Project-secret.txt' })).toHaveCount(0);
+
+      const externalFile = join(sub, 'Project-external.txt');
+      const movedFile = join(root, 'Project-moved.txt');
+      await writeFile(externalFile, '');
+      await expect(page.getByRole('row').filter({ hasText: 'Project-external.txt' })).toBeVisible();
+      await rename(externalFile, movedFile);
+      await expect(page.getByRole('row').filter({ hasText: 'Project-moved.txt' })).toBeVisible();
+      await expect(page.getByRole('row').filter({ hasText: 'Project-external.txt' })).toHaveCount(0);
+      await rm(movedFile);
+      await expect(page.getByRole('row').filter({ hasText: 'Project-moved.txt' })).toHaveCount(0);
     } finally {
       await reopened.close();
     }

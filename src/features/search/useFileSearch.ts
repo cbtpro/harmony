@@ -22,7 +22,7 @@ export function useFileSearch(api: SearchApi) {
 
   function schedulePoll() {
     clearTimeout(pollTimer);
-    if (visible.value && !busy.value && status.value.phase !== 'paused') {
+    if (visible.value && !busy.value) {
       pollTimer = setTimeout(() => void updateStatus(api.status), 1000);
     }
   }

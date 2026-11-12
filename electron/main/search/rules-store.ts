@@ -3,10 +3,11 @@ import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/
 import { dirname } from 'node:path';
 import { absolutePath } from '../files';
 import type { IndexRules } from '../../../shared/search';
-import { INDEX_LIMITS, isSystemPath } from './scan';
+import { INDEX_TUNING, isSystemPath } from './scan';
 
-export const RULE_LIMITS = { roots: INDEX_LIMITS.roots, excluded: 16 };
+export const RULE_LIMITS = { roots: INDEX_TUNING.roots, excluded: 16 };
 const MAX_SETTINGS_BYTES = 1024 * 1024;
+export interface SavedIndexRules extends IndexRules { threads?: number }
 
 function parsePaths(value: unknown, limit: number) {
   if (!Array.isArray(value) || value.length > limit) throw new Error('索引目录规则无效。');
@@ -17,7 +18,7 @@ function parsePaths(value: unknown, limit: number) {
   }))];
 }
 
-export async function loadRules(file: string, home: string): Promise<IndexRules> {
+export async function loadRules(file: string, home: string): Promise<SavedIndexRules> {
   let info: Awaited<ReturnType<typeof stat>>;
   try {
     info = await stat(file);
@@ -33,10 +34,11 @@ export async function loadRules(file: string, home: string): Promise<IndexRules>
   return {
     roots: parsePaths(saved.roots, RULE_LIMITS.roots).filter(path => !isSystemPath(path)),
     excluded: parsePaths(saved.excluded, RULE_LIMITS.excluded),
+    threads: Number.isSafeInteger(saved.threads) && saved.threads > 0 ? saved.threads : undefined,
   };
 }
 
-export async function saveRules(file: string, rules: IndexRules): Promise<void> {
+export async function saveRules(file: string, rules: SavedIndexRules): Promise<void> {
   const temporary = `${file}.${randomUUID()}.tmp`;
   await mkdir(dirname(file), { recursive: true });
   try {

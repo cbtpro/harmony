@@ -1,16 +1,13 @@
 import { link, lstat, unlink } from 'node:fs/promises';
 import { basename, dirname, extname, join } from 'node:path';
-import type { MediaCategory, MediaEntry, MediaMetadata, MediaPage } from '../../../shared/media';
+import type { MediaMetadata, MediaPage } from '../../../shared/media';
 import { absolutePath } from '../files';
 import type { FileIndex } from '../search/file-index';
-import type { ScanEntry } from '../search/scan';
+import { queryCatalog } from './catalog';
 import { classify } from './classification';
 import { createMetadataStore, isCategory, parseMetadata, text } from './metadata-store';
 import { inspectMedia } from './probe';
 import { isScrapeKind, scrape } from './scrape';
-
-const PAGE_SIZE = 24;
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
 
 function mediaPath(value: unknown) {
   const path = absolutePath(value);
@@ -49,30 +46,7 @@ export function createMediaLibrary(index: FileIndex, file: string) {
       const pageValue = input?.page;
       const requestedPage = typeof pageValue === 'number' && Number.isSafeInteger(pageValue)
         ? Math.max(1, pageValue) : 1;
-      const records = await store.load();
-      const counts: Partial<Record<MediaCategory, number>> = {};
-      const matches: Array<{ entry: ScanEntry; category: MediaCategory; metadata?: MediaMetadata }> = [];
-      for (const entry of index.indexedEntries()) {
-        if (entry.kind !== 'file') continue;
-        const detected = classify(entry.path);
-        if (!detected) continue;
-        const metadata = records.get(entry.path);
-        const category = metadata?.category ?? detected;
-        if (query && ![entry.name, metadata?.title, metadata?.creator, metadata?.genre, metadata?.year]
-          .some(value => value?.normalize('NFC').toLowerCase().includes(query))) continue;
-        counts[category] = (counts[category] ?? 0) + 1;
-        if (selected && category !== selected) continue;
-        matches.push({ entry, category, metadata });
-      }
-      matches.sort((left, right) => collator.compare(left.metadata?.title ?? left.entry.name, right.metadata?.title ?? right.entry.name)
-        || collator.compare(left.entry.path, right.entry.path));
-      const page = Math.min(requestedPage, Math.max(1, Math.ceil(matches.length / PAGE_SIZE)));
-      const items: MediaEntry[] = matches.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
-        .map(({ entry, category, metadata }) => ({
-          name: entry.name, path: entry.path, kind: 'file', directory: dirname(entry.path),
-          category, extension: extname(entry.name).slice(1).toUpperCase(), metadata,
-        }));
-      return { items, total: matches.length, page, pageSize: PAGE_SIZE, counts };
+      return queryCatalog(index.batches(), await store.load(), query, selected, requestedPage);
     },
 
     async inspect(value: unknown) {
