@@ -3,7 +3,11 @@ import { mkdir, mkdtemp, realpath, rename, rm, writeFile } from 'node:fs/promise
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+// Windows volume discovery can take up to five seconds before the scan starts.
+const indexReadyTimeout = 15_000;
+
 test('indexes automatically, enforces both lists and restores rules on restart', async () => {
+  test.setTimeout(65_000);
   const fixture = await realpath(await mkdtemp(join(tmpdir(), 'harmony-search-ui-')));
   try {
     const root = join(fixture, 'workspace');
@@ -63,7 +67,7 @@ test('indexes automatically, enforces both lists and restores rules on restart',
       }, root);
       await page.getByRole('button', { name: '添加白名单目录' }).click();
       await expect(page.getByRole('list', { name: '白名单' })).toContainText(root);
-      await expect(page.getByRole('status')).toContainText('索引已完成');
+      await expect(page.getByRole('status')).toContainText('索引已完成', { timeout: indexReadyTimeout });
       await expect.poll(() => app.evaluate(() => JSON.parse(process.env.HARMONY_INDEX_NOTIFICATIONS ?? '[]')))
         .toEqual([{ title: 'Harmony 索引已完成', body: '已索引 4 个文件和文件夹。', silent: true }]);
 
@@ -75,7 +79,7 @@ test('indexes automatically, enforces both lists and restores rules on restart',
       }, excluded);
       await page.getByRole('button', { name: '添加黑名单目录' }).click();
       await expect(page.getByRole('list', { name: '黑名单' })).toContainText(excluded);
-      await expect(page.getByRole('status')).toContainText('索引已完成');
+      await expect(page.getByRole('status')).toContainText('索引已完成', { timeout: indexReadyTimeout });
       const result = page.getByRole('row').filter({ hasText: 'Project-2026.txt' });
       await expect(result).toBeVisible();
       await expect(privateResult).toHaveCount(0);
@@ -118,7 +122,7 @@ test('indexes automatically, enforces both lists and restores rules on restart',
       await topSearch.press('Enter');
       await expect(page.getByRole('list', { name: '白名单' })).toContainText(root);
       await expect(page.getByRole('list', { name: '黑名单' })).toContainText(excluded);
-      await expect(page.getByRole('status')).toContainText('索引已完成');
+      await expect(page.getByRole('status')).toContainText('索引已完成', { timeout: indexReadyTimeout });
       await expect(page.getByRole('searchbox', { name: '搜索已索引的文件' })).toHaveValue('project');
       await expect(page.getByRole('row').filter({ hasText: 'Project-2026.txt' })).toBeVisible();
       await expect(page.getByRole('row').filter({ hasText: 'Project-secret.txt' })).toHaveCount(0);
