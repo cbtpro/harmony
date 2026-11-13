@@ -15,7 +15,7 @@ test('previews grouped files and folders and distinguishes search submission fro
     await Promise.all([
       writeFile(image, ''),
       writeFile(document, ''),
-      writeFile(join(profile, 'index-rules.json'), JSON.stringify({ version: 1, roots: [folder], excluded: [] })),
+      writeFile(join(profile, 'index-rules.json'), JSON.stringify({ version: 1, roots: [folder], excluded: [], preferSystem: false })),
     ]);
     const program = process.platform === 'darwin' ? join(folder, 'Demo App.app')
       : process.platform === 'win32' ? join(folder, 'Demo App.exe') : undefined;

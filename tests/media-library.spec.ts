@@ -12,7 +12,7 @@ test('classifies media, applies a scraper result and renames the indexed file', 
     await Promise.all([
       writeFile(join(folder, 'Example Book.epub'), 'fixture'),
       writeFile(join(folder, 'Show.S01E01.mkv'), ''),
-      writeFile(join(profile, 'index-rules.json'), JSON.stringify({ version: 1, roots: [folder], excluded: [] })),
+      writeFile(join(profile, 'index-rules.json'), JSON.stringify({ version: 1, roots: [folder], excluded: [], preferSystem: false })),
     ]);
 
     const app = await electron.launch({

@@ -29,7 +29,8 @@ test('indexes automatically, enforces both lists and restores rules on restart',
       await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
       const threads = page.getByRole('spinbutton', { name: '索引线程数' });
       await expect(threads).toBeVisible();
-      await expect(page.getByRole('switch', { name: '优先使用系统索引' })).toHaveAttribute('aria-checked', 'true');
+      const preferSystem = page.getByRole('switch', { name: '优先使用系统索引' });
+      await expect(preferSystem).toHaveAttribute('aria-checked', 'true');
       if (process.platform === 'darwin') {
         await expect(page.getByRole('button', { name: '打开 Spotlight 设置' })).toBeVisible();
         await page.getByRole('button', { name: '修复 Spotlight 索引' }).click();
@@ -40,11 +41,12 @@ test('indexes automatically, enforces both lists and restores rules on restart',
       const previous = await threads.inputValue();
       const max = Number(await threads.getAttribute('aria-valuemax'));
       savedThreads = previous === '1' && max > 1 ? '2' : '1';
-      if (previous !== savedThreads) {
-        await threads.fill(savedThreads);
-        await page.getByRole('button', { name: '保存设置' }).click();
-        await expect(page.getByRole('status')).toHaveText('设置已保存');
-      }
+      if (previous !== savedThreads) await threads.fill(savedThreads);
+      // The scan count, notification and watcher checks depend on Harmony's own index.
+      await preferSystem.click();
+      await expect(preferSystem).toHaveAttribute('aria-checked', 'false');
+      await page.getByRole('button', { name: '保存设置' }).click();
+      await expect(page.getByRole('status')).toHaveText('设置已保存');
       const settingsTab = page.getByRole('tab', { name: '设置', exact: true });
       await page.locator('.ant-tabs-tab').filter({ has: settingsTab }).getByRole('button', { name: '关闭标签' }).click();
       await expect(settingsTab).toHaveCount(0);
@@ -107,6 +109,7 @@ test('indexes automatically, enforces both lists and restores rules on restart',
       const page = await reopened.firstWindow();
       await page.getByRole('link', { name: '设置', exact: true }).click();
       await expect(page.getByRole('spinbutton', { name: '索引线程数' })).toHaveValue(savedThreads);
+      await expect(page.getByRole('switch', { name: '优先使用系统索引' })).toHaveAttribute('aria-checked', 'false');
       const topSearch = page.getByRole('combobox', { name: '顶部全局搜索' });
       await expect(topSearch).toBeVisible();
       await page.keyboard.press('Control+k');

@@ -9,7 +9,7 @@ test('shares the engine with the webpage and denies unauthenticated requests', a
     const data = join(profile, 'workspace');
     await mkdir(data);
     await writeFile(join(data, 'shared-file.txt'), 'Web file preview');
-    await writeFile(join(profile, 'index-rules.json'), JSON.stringify({ version: 1, roots: [data], excluded: [] }));
+    await writeFile(join(profile, 'index-rules.json'), JSON.stringify({ version: 1, roots: [data], excluded: [], preferSystem: false }));
     const app = await electron.launch({
       args: ['.', `--user-data-dir=${profile}`],
       env: { ...process.env, VITE_DEV_SERVER_URL: '' },
