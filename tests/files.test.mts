@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, parse } from 'node:path';
 import { test } from 'node:test';
@@ -16,12 +16,14 @@ const { createBatchFiles } = await import('../electron/main/batch-files.ts');
 const { readFilePreview } = await import('../electron/main/file-preview.ts');
 const { createFavorites } = await import('../electron/main/favorites.ts');
 const { filteredSearch } = await import('../electron/main/search/filtered-search.ts');
+const { createFolder, duplicateFile, entryPath, listDirectory, permanentlyDelete } = await import('../electron/main/files.ts');
+const { filesystemPath, windowsPath } = await import('../electron/main/file-path.ts');
+const { transferDirectory } = await import('../electron/main/directory-transfer.ts');
 hooks.deregister();
-import { createFolder, duplicateFile, entryPath, listDirectory } from '../electron/main/files.ts';
 
 async function fixture(t: { after: (callback: () => Promise<void>) => void }) {
   const directory = await mkdtemp(join(tmpdir(), 'harmony-unit-'));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(() => rm(filesystemPath(directory), { recursive: true, force: true }));
   return directory;
 }
 
@@ -90,6 +92,115 @@ test('previews conflict policies and rejects stale archive targets', async t => 
   assert.equal((await batch.run(move.ticket))[0].status, 'done');
   assert.equal(await readFile(join(target, 'document (2).txt'), 'utf8'), 'source data');
   await assert.rejects(readFile(original), { code: 'ENOENT' });
+});
+
+test('normalizes Windows drive and UNC paths without exposing device paths', () => {
+  assert.equal(windowsPath('c:/source/../target'), 'c:\\target');
+  assert.equal(windowsPath('\\\\?\\C:\\目标'), 'C:\\目标');
+  assert.equal(windowsPath('\\\\?\\UNC\\server\\share\\目标'), '\\\\server\\share\\目标');
+  assert.throws(() => windowsPath('\\\\.\\PhysicalDrive0'), /绝对路径/);
+  assert.throws(() => windowsPath('\\\\?\\GLOBALROOT\\Device\\Disk'), /绝对路径/);
+  assert.throws(() => windowsPath('C:\\file.txt:stream'), /文件名/);
+});
+
+test('copies, moves, lists and deletes a directory tree with paths longer than 300 characters', async t => {
+  const root = await realpath(await fixture(t));
+  const source = join(root, 'source');
+  const archive = join(root, 'archive');
+  const parts = ['目录'.repeat(35), 'a'.repeat(125), 'b'.repeat(125)];
+  const deep = join(source, ...parts);
+  const name = '报告.txt';
+  assert.ok(join(deep, name).length > 300);
+  await mkdir(filesystemPath(deep), { recursive: true });
+  await mkdir(archive);
+  await mkdir(filesystemPath(join(deep, 'empty')));
+  await writeFile(filesystemPath(join(deep, name)), 'long-path content');
+  const batch = createBatchFiles(() => {});
+  const inside = await batch.transfer([source], deep, 'move', 'keep');
+  assert.equal(inside.rows[0].action, 'blocked');
+  assert.match(inside.rows[0].reason!, /自身/);
+  const plan = await batch.transfer([source, join(deep, name)], archive, 'copy', 'keep');
+  const contents = plan.rows[0].contents;
+  assert.ok(contents, plan.rows[0].reason);
+  assert.deepEqual([contents.files, contents.directories, contents.skipped], [1, 4, 0]);
+  assert.ok(contents.sample.includes(join(...parts, name)));
+  assert.equal(plan.rows[1].action, 'skip');
+  assert.deepEqual((await batch.run(plan.ticket)).map(row => row.status), ['done', 'skipped']);
+  const copied = join(archive, 'source', ...parts);
+  assert.deepEqual((await listDirectory(copied)).entries.map(item => item.name), ['empty', name]);
+  assert.equal(await readFile(filesystemPath(join(copied, name)), 'utf8'), 'long-path content');
+  const move = await batch.transfer([source], archive, 'move', 'keep');
+  assert.equal((await batch.run(move.ticket))[0].status, 'done');
+  await assert.rejects(stat(source), { code: 'ENOENT' });
+  const moved = join(archive, 'source (2)', ...parts);
+  assert.equal(await readFile(filesystemPath(join(moved, name)), 'utf8'), 'long-path content');
+  await permanentlyDelete(moved);
+  await assert.rejects(stat(filesystemPath(moved)), { code: 'ENOENT' });
+});
+
+test('cross-volume move keeps the source and removes staged data when copying fails', async t => {
+  const root = await realpath(await fixture(t));
+  const sourceDevice = (await stat(root, { bigint: true })).dev;
+  let otherVolume = process.env.HARMONY_CROSS_VOLUME_DIR;
+  if (!otherVolume && process.platform === 'win32' && process.env.GITHUB_ACTIONS === 'true') {
+    for (const candidate of [process.env.GITHUB_WORKSPACE, process.env.PUBLIC, process.env.RUNNER_TEMP]) {
+      if (!candidate) continue;
+      const info = await stat(candidate, { bigint: true }).catch(() => undefined);
+      if (info?.isDirectory() && info.dev !== sourceDevice) { otherVolume = candidate; break; }
+    }
+    assert.ok(otherVolume, 'Windows CI must exercise a real second volume');
+  }
+  const archive = otherVolume ? await mkdtemp(join(otherVolume, 'target-')) : join(root, 'target');
+  if (otherVolume) {
+    t.after(() => rm(archive, { recursive: true, force: true }));
+    assert.notEqual(sourceDevice, (await stat(archive, { bigint: true })).dev);
+  } else await mkdir(archive);
+  const source = join(root, 'source');
+  await mkdir(source);
+  await writeFile(join(source, 'a.txt'), 'first');
+  await writeFile(join(source, 'b.txt'), 'second');
+  let copies = 0;
+  const batch = createBatchFiles(() => {}, (from, to, tree, move, sameVolume) => {
+    if (otherVolume) assert.equal(sameVolume, false);
+    return transferDirectory(from, to, tree, move, otherVolume ? sameVolume : false, async (input, output, mode) => {
+      if (++copies === 2) throw Object.assign(new Error('simulated destination write failure'), { code: 'ENOSPC' });
+      await copyFile(input, output, mode);
+    });
+  });
+  const plan = await batch.transfer([source], archive, 'move', 'skip');
+  const [result] = await batch.run(plan.ticket);
+  assert.equal(copies, 2);
+  assert.equal(result.status, 'failed');
+  assert.match(result.message!, /simulated destination/);
+  assert.equal(await readFile(join(source, 'a.txt'), 'utf8'), 'first');
+  assert.equal(await readFile(join(source, 'b.txt'), 'utf8'), 'second');
+  assert.deepEqual((await listDirectory(archive)).entries, []);
+  const retry = createBatchFiles(() => {}, (from, to, tree, move) => transferDirectory(from, to, tree, move, false));
+  const retryPlan = await retry.transfer([source], archive, 'move', 'skip');
+  const [completed] = await retry.run(retryPlan.ticket);
+  assert.equal(completed.status, 'done', completed.message);
+  assert.equal(completed.message, undefined);
+  assert.equal(await readFile(join(archive, 'source', 'b.txt'), 'utf8'), 'second');
+  await assert.rejects(stat(source), { code: 'ENOENT' });
+});
+
+test('directory copies skip links and moves preserve directories that contain them', async t => {
+  const root = await realpath(await fixture(t));
+  const source = join(root, 'source');
+  const target = join(root, 'target');
+  const external = join(root, 'external');
+  await Promise.all([mkdir(source), mkdir(target), mkdir(external)]);
+  await writeFile(join(external, 'outside.txt'), 'original');
+  await symlink(external, join(source, 'link'), process.platform === 'win32' ? 'junction' : 'dir');
+  const batch = createBatchFiles(() => {});
+  const move = await batch.transfer([source], target, 'move', 'skip');
+  assert.equal(move.ticket, undefined);
+  assert.match(move.rows[0].reason!, /特殊项目/);
+  const copy = await batch.transfer([source], target, 'copy', 'skip');
+  assert.equal(copy.rows[0].contents?.skipped, 1);
+  assert.equal((await batch.run(copy.ticket))[0].status, 'done');
+  assert.deepEqual((await listDirectory(join(target, 'source'))).entries, []);
+  assert.equal(await readFile(join(external, 'outside.txt'), 'utf8'), 'original');
 });
 
 test('blocks duplicate rename destinations and applies numbering after preview', async t => {

@@ -21,6 +21,7 @@ export interface FilesApi {
   reveal(path: string): Promise<Result<void>>;
   copyPath(path: string): Promise<Result<void>>;
   trash(path: string): Promise<Result<void>>;
+  deletePermanently(path: string): Promise<Result<void>>;
 }
 
 export type TransferAction = 'copy' | 'move';
@@ -31,6 +32,7 @@ export interface BatchRow {
   target?: string;
   action: 'ready' | 'skip' | 'replace' | 'blocked';
   reason?: string;
+  contents?: { files: number; directories: number; skipped: number; sample: string[] };
 }
 
 export interface BatchPlan {

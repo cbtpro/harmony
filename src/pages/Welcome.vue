@@ -9,6 +9,7 @@ import {
 import type { FileEntry } from '../../shared/files';
 import FileContextMenu from '@/features/files/FileContextMenu.vue';
 import FilePreview from '@/features/files/FilePreview.vue';
+import DeleteDialog from '@/features/files/DeleteDialog.vue';
 import RenameDialog from '@/features/files/RenameDialog.vue';
 import { useFilePreview } from '@/features/files/useFilePreview';
 import FavoriteDialog from '@/features/workspace/FavoriteDialog.vue';
@@ -36,7 +37,7 @@ const router = useRouter();
 const creating = ref(false);
 const folderName = ref('');
 const folderError = ref('');
-const trashEntry = ref<FileEntry>();
+const deletion = ref<{ entry: FileEntry; permanent: boolean }>();
 const columns = [
   { title: '名称', key: 'name' },
   { title: '类型', key: 'kind', width: 92 },
@@ -85,7 +86,7 @@ function openEntry(entry: FileEntry) {
 
 onDeactivated(() => {
   creating.value = false;
-  trashEntry.value = undefined;
+  deletion.value = undefined;
   favorite.value = undefined;
 });
 
@@ -102,12 +103,6 @@ async function createFolder() {
   if (!folderError.value) creating.value = false;
 }
 
-async function confirmTrash() {
-  const entry = trashEntry.value;
-  if (!entry || busy.value) return;
-  await browser.trash(entry);
-  trashEntry.value = undefined;
-}
 </script>
 
 <template>
@@ -156,8 +151,9 @@ async function confirmTrash() {
           <template #prefix><SearchOutlined /></template>
         </Input>
       </template>
-      <FileContextMenu v-slot="{ row }" :disabled="busy" copy-file trash
-        @open-entry="openEntry" @copy-file="browser.copy" @trash-entry="trashEntry = $event">
+      <FileContextMenu v-slot="{ row }" :disabled="busy" copy-file trash permanent-delete
+        @open-entry="openEntry" @copy-file="browser.copy" @trash-entry="deletion = { entry: $event, permanent: false }"
+        @delete-entry="deletion = { entry: $event, permanent: true }">
         <Table size="small" :columns="columns" :data-source="entries" row-key="path" :custom-row="(entry: FileEntry) => ({ ...row(entry), ...preview.row(entry) })"
           :pagination="pagination" :loading="busy" :row-selection="selection" table-layout="fixed">
           <template #emptyText><Empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="没有可显示的项目" /></template>
@@ -180,7 +176,7 @@ async function confirmTrash() {
               <Button v-if="record.kind === 'file'" size="small" type="text" class="file-action"
                 :disabled="busy" @click="browser.copy(record)">复制到…</Button>
               <Button size="small" type="text" class="file-action" :disabled="busy"
-                @click="trashEntry = record">移到废纸篓</Button>
+                @click="deletion = { entry: record, permanent: false }">移到废纸篓</Button>
             </template>
           </template>
         </Table>
@@ -197,10 +193,7 @@ async function confirmTrash() {
       </form>
       <Alert v-if="folderError" role="alert" class="dialog-error" type="error" show-icon :message="folderError" />
     </Modal>
-    <Modal :open="!!trashEntry" title="移到废纸篓" ok-text="移到废纸篓" :confirm-loading="busy"
-      :ok-button-props="{ danger: true }" @ok="confirmTrash" @cancel="trashEntry = undefined">
-      <p>将「{{ trashEntry?.name }}」移到系统废纸篓？</p>
-    </Modal>
+    <DeleteDialog :request="deletion" @close="deletion = undefined" @completed="selected = []; browser.navigate(directory?.path)" />
   </section>
 </template>
 

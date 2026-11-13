@@ -13,11 +13,12 @@ const props = defineProps<{
   openParent?: boolean;
   copyFile?: boolean;
   trash?: boolean;
+  permanentDelete?: boolean;
   openLabel?: (entry: FileEntry) => string;
 }>();
 const emit = defineEmits<{
   (event: 'open-change', open: boolean): void;
-  (event: 'open-entry' | 'open-parent' | 'copy-file' | 'trash-entry', entry: FileEntry): void;
+  (event: 'open-entry' | 'open-parent' | 'copy-file' | 'trash-entry' | 'delete-entry', entry: FileEntry): void;
 }>();
 
 const target = shallowRef<FileEntry>();
@@ -84,6 +85,7 @@ async function select({ key }: { key: string | number }) {
     case 'parent': emit('open-parent', entry); break;
     case 'copy': emit('copy-file', entry); break;
     case 'trash': emit('trash-entry', entry); break;
+    case 'delete': emit('delete-entry', entry); break;
     case 'manager': {
       const result = await (entry.kind === 'directory' ? files.open(entry.path) : files.reveal(entry.path));
       if (result.ok === false) void message.error(result.message);
@@ -133,6 +135,7 @@ async function select({ key }: { key: string | number }) {
           <Menu.Divider />
           <Menu.Item key="trash" danger><template #icon><DeleteOutlined /></template>移到废纸篓</Menu.Item>
         </template>
+        <Menu.Item v-if="permanentDelete" key="delete" danger>永久删除…</Menu.Item>
       </Menu>
     </template>
   </Dropdown>

@@ -11,7 +11,7 @@ import type { IndexCompletion } from '../electron/main/search/index-automation';
 // Node's test runner needs extensions that Vite resolves during the app build.
 const hooks = registerHooks({
   resolve(specifier, context, nextResolve) {
-    if (context.parentURL?.includes('/electron/main/search/')
+    if (context.parentURL?.includes('/electron/main/')
       && specifier.startsWith('.') && !specifier.endsWith('.ts')) {
       return nextResolve(specifier + '.ts', context);
     }

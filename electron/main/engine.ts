@@ -7,7 +7,8 @@ import type { Result } from '../../shared/files';
 import { MAX_SEARCH_QUERY, parseSearchFilters } from '../../shared/search';
 import type { IndexRules } from '../../shared/search';
 import { discoverMounts, diskSpace } from './disks';
-import { absolutePath, createFolder, duplicateFile, entryPath, listDirectory } from './files';
+import { absolutePath, createFolder, duplicateFile, entryPath, listDirectory, permanentlyDelete } from './files';
+import { filesystemPath } from './file-path';
 import { createMediaLibrary } from './media/library';
 import { FileIndex } from './search/file-index';
 import { IndexAutomation } from './search/index-automation';
@@ -38,6 +39,7 @@ const messages: Record<string, string> = {
   EACCES: '没有访问权限。',
   EPERM: '系统拒绝了该操作。',
   ENOSPC: '磁盘空间不足。',
+  ENAMETOOLONG: '路径或名称超出目标文件系统限制。',
 };
 
 const run = promisify(execFile);
@@ -54,7 +56,8 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
   const automation = new IndexAutomation(index, rulesFile, home, undefined, mountPaths, platform.onIndexComplete, new SystemIndex());
   const media = createMediaLibrary(index, join(dirname(rulesFile), 'media-metadata.json'),
     extensions => automation.searchEntries({ extensions }, true));
-  const batchFiles = createBatchFiles(async (source, target) => {
+  const batchFiles = createBatchFiles(async (source, target, kind) => {
+    if (kind === 'directory') return;
     if (dirname(source) === dirname(target)) index.replaceIndexedFile(source, { path: target, name: basename(target), kind: 'file' });
     await media.relocateMetadata(source, target);
   });
@@ -62,7 +65,7 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
   async function choose(value: unknown) {
     if (value === undefined) return platform.chooseDirectory();
     const path = absolutePath(value);
-    if (!(await stat(path)).isDirectory()) throw new Error('该路径不是文件夹。');
+    if (!(await stat(filesystemPath(path))).isDirectory()) throw new Error('该路径不是文件夹。');
     return path;
   }
 
@@ -138,11 +141,17 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
     ['files:open', path => index.prioritize(() => openPath(absolutePath(path)))],
     ['files:reveal', value => index.prioritize(async () => {
       const path = absolutePath(value);
-      await lstat(path);
+      await lstat(filesystemPath(path));
       platform.reveal(path);
     })],
     ['files:copy-path', path => platform.copyPath(absolutePath(path))],
-    ['files:trash', path => index.prioritize(() => platform.trash(entryPath(path)))],
+    ['files:trash', path => index.prioritize(async () => {
+      const entry = entryPath(path);
+      await lstat(filesystemPath(entry));
+      try { await platform.trash(entry); }
+      catch (error) { throw new Error(`无法移到系统回收站，未执行永久删除。${error instanceof Error ? ` ${error.message}` : ''}`); }
+    })],
+    ['files:delete-permanently', path => index.prioritize(() => permanentlyDelete(path))],
     ['terminals:list', () => terminals.list()],
     ['terminals:open', (id, path) => index.prioritize(() => terminals.open(id, absolutePath(path)))],
     ['media:list', query => media.list(query)],

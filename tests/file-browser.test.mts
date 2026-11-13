@@ -19,6 +19,7 @@ function api(overrides: Partial<FilesApi>): FilesApi {
     reveal: async () => ({ ok: true, value: undefined }),
     copyPath: async () => ({ ok: true, value: undefined }),
     trash: async () => ({ ok: true, value: undefined }),
+    deletePermanently: async () => ({ ok: true, value: undefined }),
     ...overrides,
   };
 }
