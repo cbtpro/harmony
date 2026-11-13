@@ -3,6 +3,7 @@ import { lstat, open } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import type { PreviewContent } from '../../shared/files';
 import { entryPath } from './files';
+import { filesystemPath } from './file-path';
 
 const images: Record<string, string> = {
   jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif',
@@ -21,9 +22,10 @@ export async function readFilePreview(value: unknown): Promise<PreviewContent> {
       : textExtensions.has(extension) || !extension && /^(readme|license|changelog|makefile|dockerfile)$/i.test(basename(path))
         ? 'text' : undefined;
   if (!kind) throw new Error('此文件类型不支持预览，可用默认应用打开。');
-  const expected = await lstat(path, { bigint: true });
+  const nativePath = filesystemPath(path);
+  const expected = await lstat(nativePath, { bigint: true });
   if (!expected.isFile()) throw new Error('请选择普通文件。');
-  const file = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
+  const file = await open(nativePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
     const info = await file.stat({ bigint: true });
     if (!info.isFile() || expected.dev !== info.dev || expected.ino !== info.ino) throw new Error('文件已变更。');

@@ -53,6 +53,7 @@ export const files: FilesApi = {
   reveal: path => request('files:reveal', path),
   copyPath: path => request('files:copy-path', path),
   trash: path => request('files:trash', path),
+  deletePermanently: path => request('files:delete-permanently', path),
 };
 
 export const terminals: TerminalsApi = {

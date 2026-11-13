@@ -68,6 +68,5 @@ export function useFileBrowser(api: FilesApi) {
       const destination = await unwrap(api.choose());
       if (destination !== null) await unwrap(api.copyFile(entry.path, destination));
     }),
-    trash: (entry: FileEntry) => run(() => mutate(() => api.trash(entry.path))),
   };
 }

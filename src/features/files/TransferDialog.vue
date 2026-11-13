@@ -78,12 +78,18 @@ async function submit() {
       <li v-for="item in outcome" :key="item.source">
         <strong>{{ item.status === 'done' ? '完成' : item.status === 'skipped' ? '跳过' : '失败' }}</strong>
         {{ item.source }} <span v-if="item.message"> · {{ item.message }}</span>
+        <small v-if="item.target">→ {{ item.target }}</small>
       </li>
     </ul>
     <ul v-else-if="plan" class="batch-list" aria-label="归档预览">
       <li v-for="item in plan.rows" :key="item.source">
         <strong>{{ labels[item.action] }}</strong> {{ item.source }}
         <small v-if="item.target">→ {{ item.target }}</small>
+        <small v-if="item.contents">含 {{ item.contents.files }} 个文件、{{ item.contents.directories }} 个子文件夹<span v-if="item.contents.skipped">，跳过 {{ item.contents.skipped }} 个链接或特殊项目</span></small>
+        <details v-if="item.contents?.sample.length">
+          <summary>查看目标目录内容<span v-if="item.contents.files + item.contents.directories > item.contents.sample.length">（前 20 项）</span></summary>
+          <ul><li v-for="name in item.contents.sample" :key="name">{{ name }}</li></ul>
+        </details>
         <small v-if="item.reason">{{ item.reason }}</small>
       </li>
     </ul>

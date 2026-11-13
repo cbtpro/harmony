@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onDeactivated, onMounted, ref } from 'vue';
 import { Alert, Button, Card, Input, Table, Tabs } from 'ant-design-vue';
 import type { FileEntry } from '../../../shared/files';
 import { useFileBrowser } from './useFileBrowser';
 import { useFilePreview } from './useFilePreview';
 import FilePreview from './FilePreview.vue';
+import FileContextMenu from './FileContextMenu.vue';
+import DeleteDialog from './DeleteDialog.vue';
 import { files } from '@/services/client';
 
 const props = defineProps<{ title: string }>();
@@ -17,12 +19,13 @@ interface PaneTab { id: string; path?: string }
 const tabs = ref<PaneTab[]>([{ id: '1' }]);
 const activeTab = ref('1');
 const selected = ref<string[]>([]);
+const deletion = ref<{ entry: FileEntry; permanent: boolean }>();
 let sequence = 1;
 const columns = [{ title: '名称', key: 'name' }, { title: '操作', key: 'actions', width: 76 }];
 const selection = computed(() => ({
   selectedRowKeys: selected.value,
   onChange: (keys: (number | string)[]) => select(keys.map(String)),
-  getCheckboxProps: (entry: FileEntry) => ({ disabled: entry.kind !== 'file' }),
+  getCheckboxProps: (entry: FileEntry) => ({ disabled: entry.kind !== 'file' && entry.kind !== 'directory' }),
 }));
 
 function select(paths: string[]) {
@@ -72,6 +75,7 @@ function titleFor(path?: string) {
   return path?.split(/[\\/]/).filter(Boolean).pop() ?? '主目录';
 }
 defineExpose({ refresh: () => navigate(directory.value?.path) });
+onDeactivated(() => { deletion.value = undefined; });
 onMounted(() => void navigate());
 </script>
 
@@ -90,13 +94,18 @@ onMounted(() => void navigate());
       <Button html-type="submit" :disabled="busy">前往</Button>
     </form>
     <Alert v-if="error" role="alert" type="error" :message="error" />
-    <Table size="small" :columns="columns" :data-source="entries" row-key="path" :row-selection="selection"
-      :custom-row="preview.row" :loading="busy" :pagination="{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }">
+    <FileContextMenu v-slot="{ row }" :disabled="busy" trash permanent-delete @open-entry="open"
+      @trash-entry="deletion = { entry: $event, permanent: false }" @delete-entry="deletion = { entry: $event, permanent: true }">
+      <Table size="small" :columns="columns" :data-source="entries" row-key="path" :row-selection="selection"
+      :custom-row="(entry: FileEntry) => ({ ...row(entry), ...preview.row(entry) })" :loading="busy"
+      :pagination="{ pageSize: 20, hideOnSinglePage: true, showSizeChanger: false }">
       <template #bodyCell="{ column, record }">
         <Button v-if="column.key === 'name'" class="pane-name" type="link" :title="record.name" @click="open(record)">{{ record.kind === 'directory' ? '📁 ' : '' }}{{ record.name }}</Button>
         <Button v-else-if="record.kind === 'file'" size="small" type="text" @click="preview.open(record)">预览</Button>
       </template>
-    </Table>
+      </Table>
+    </FileContextMenu>
+    <DeleteDialog :request="deletion" @close="deletion = undefined" @completed="navigate(directory?.path)" />
     <FilePreview v-model:path="previewPath" :entries="previewEntries" />
   </Card>
 </template>

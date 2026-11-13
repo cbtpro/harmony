@@ -1,13 +1,14 @@
 import { constants } from 'node:fs';
-import { copyFile, lstat, mkdir, readdir } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readdir, rm, unlink } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, normalize, parse } from 'node:path';
 import type { Directory, FileEntry } from '../../shared/files';
+import { componentLength, filesystemPath, windowsPath } from './file-path';
 
 export function absolutePath(value: unknown): string {
   if (typeof value !== 'string' || value.includes('\0') || !isAbsolute(value)) {
     throw new Error('请输入绝对路径。');
   }
-  return normalize(value);
+  return process.platform === 'win32' ? windowsPath(value) : normalize(value);
 }
 
 export function entryPath(value: unknown): string {
@@ -20,7 +21,7 @@ export function entryPath(value: unknown): string {
 
 export async function listDirectory(value: unknown): Promise<Directory> {
   const path = absolutePath(value);
-  const entries = (await readdir(path, { withFileTypes: true })).map((entry): FileEntry => ({
+  const entries = (await readdir(filesystemPath(path), { withFileTypes: true })).map((entry): FileEntry => ({
     name: entry.name,
     path: join(path, entry.name),
     kind: entry.isDirectory() ? 'directory'
@@ -35,7 +36,7 @@ export async function listDirectory(value: unknown): Promise<Directory> {
 }
 
 export function validEntryName(name: unknown): name is string {
-  return typeof name === 'string' && !!name.trim() && Buffer.byteLength(name) <= 255
+  return typeof name === 'string' && !!name.trim() && componentLength(name) <= 255
     && !/[<>:"/\\|?*\x00-\x1f]|[. ]$/.test(name)
     && !/^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]) *(\.|$)/i.test(name);
 }
@@ -44,11 +45,17 @@ export async function createFolder(directory: unknown, name: unknown): Promise<v
   if (!validEntryName(name)) {
     throw new Error('请输入有效的文件夹名称。');
   }
-  await mkdir(join(absolutePath(directory), name));
+  await mkdir(filesystemPath(join(absolutePath(directory), name)));
 }
 
 export async function duplicateFile(source: unknown, directory: unknown): Promise<void> {
   const path = entryPath(source);
-  if (!(await lstat(path)).isFile()) throw new Error('请选择普通文件。');
-  await copyFile(path, join(absolutePath(directory), basename(path)), constants.COPYFILE_EXCL);
+  if (!(await lstat(filesystemPath(path))).isFile()) throw new Error('请选择普通文件。');
+  await copyFile(filesystemPath(path), filesystemPath(join(absolutePath(directory), basename(path))), constants.COPYFILE_EXCL);
+}
+
+export async function permanentlyDelete(value: unknown): Promise<void> {
+  const path = filesystemPath(entryPath(value));
+  if ((await lstat(path)).isDirectory()) await rm(path, { recursive: true });
+  else await unlink(path);
 }
