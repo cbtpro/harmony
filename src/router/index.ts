@@ -30,6 +30,12 @@ export const workspaceRoutes = [
     component: () => import('@/pages/Welcome.vue'),
   },
   {
+    path: '/dual-files',
+    name: 'dual',
+    meta: { title: '双栏', cacheName: 'DualFiles' },
+    component: () => import('@/pages/DualFiles.vue'),
+  },
+  {
     path: '/disks',
     name: 'disks',
     meta: { title: '磁盘', cacheName: 'Disks' },

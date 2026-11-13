@@ -17,6 +17,7 @@ import { isAbsolute, join } from 'node:path';
 import { createEngine } from './engine';
 import { registerIpc } from './ipc';
 import { configureSystemNotifications, showSystemNotification } from './notifications';
+import { openSpotlightSettings, rebuildSpotlight } from './search/spotlight-maintenance';
 import { startWebServer } from './web-server';
 
 const userData = app.commandLine.getSwitchValue('user-data-dir');
@@ -72,6 +73,19 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   configureSystemNotifications();
   registerIpc(() => window, async (name, args) => {
+    if (name === 'spotlight:settings' || name === 'spotlight:rebuild') {
+      if (process.platform !== 'darwin') return { ok: false, message: '此操作仅适用于 macOS。' };
+      try {
+        if (name === 'spotlight:settings') await openSpotlightSettings();
+        else {
+          await rebuildSpotlight();
+          engine.refreshSystemIndex();
+        }
+        return { ok: true, value: undefined };
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : 'Spotlight 操作失败。' };
+      }
+    }
     if (name !== 'web:open') return engine.dispatch(name, args);
     if (!web) return { ok: false, message: '网页服务未能启动。' };
     try {

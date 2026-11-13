@@ -15,8 +15,10 @@ export function useMediaLibrary() {
   let request = 0;
   let pollTimer: ReturnType<typeof setTimeout>;
   let filterTimer: ReturnType<typeof setTimeout>;
+  let lastLoad = 0;
 
   async function load(number = page.value.page) {
+    lastLoad = Date.now();
     const current = ++request;
     busy.value = true;
     error.value = '';
@@ -36,7 +38,9 @@ export function useMediaLibrary() {
     if (result.ok) {
       const previous = status.value;
       status.value = result.value;
-      if (!previous || previous.count !== result.value.count || previous.revision !== result.value.revision) {
+      const systemCatalog = result.value.sources?.some(source => source.provider !== 'Harmony');
+      if (!previous || previous.count !== result.value.count || previous.revision !== result.value.revision
+        || (systemCatalog && Date.now() - lastLoad >= 30_000)) {
         await load();
       }
     }

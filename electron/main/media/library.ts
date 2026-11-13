@@ -4,7 +4,8 @@ import type { MediaMetadata, MediaPage } from '../../../shared/media';
 import { absolutePath } from '../files';
 import type { FileIndex } from '../search/file-index';
 import { queryCatalog } from './catalog';
-import { classify } from './classification';
+import { classify, mediaExtensions } from './classification';
+import type { ScanEntry } from '../search/scan';
 import { createMetadataStore, isCategory, parseMetadata, text } from './metadata-store';
 import { inspectMedia } from './probe';
 import { isScrapeKind, scrape } from './scrape';
@@ -25,7 +26,8 @@ function newFileName(path: string, value: unknown) {
   return name;
 }
 
-export function createMediaLibrary(index: FileIndex, file: string) {
+export function createMediaLibrary(index: FileIndex, file: string,
+  batches: (extensions: readonly string[]) => AsyncIterable<readonly ScanEntry[]> = () => index.batches()) {
   const store = createMetadataStore(file);
   let writes = Promise.resolve();
   let activeLookups = 0;
@@ -46,7 +48,7 @@ export function createMediaLibrary(index: FileIndex, file: string) {
       const pageValue = input?.page;
       const requestedPage = typeof pageValue === 'number' && Number.isSafeInteger(pageValue)
         ? Math.max(1, pageValue) : 1;
-      return queryCatalog(index.batches(), await store.load(), query, selected, requestedPage);
+      return queryCatalog(batches(mediaExtensions), await store.load(), query, selected, requestedPage);
     },
 
     async inspect(value: unknown) {
@@ -75,6 +77,20 @@ export function createMediaLibrary(index: FileIndex, file: string) {
         if (!(await lstat(path)).isFile()) throw new Error('请选择普通媒体文件。');
         const records = new Map(await store.load());
         records.set(path, parseMetadata(metadata));
+        await store.save(records);
+      });
+    },
+
+    relocateMetadata(source: string, destination: string) {
+      if (!classify(source)) return Promise.resolve();
+      return serialize(async () => {
+        const current = await store.load();
+        const metadata = current.get(source);
+        if (!metadata && !current.has(destination)) return;
+        const records = new Map(current);
+        records.delete(source);
+        records.delete(destination);
+        if (metadata) records.set(destination, metadata);
         await store.save(records);
       });
     },

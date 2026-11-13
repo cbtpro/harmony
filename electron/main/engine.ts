@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process';
 import { lstat, stat } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { Disk } from '../../shared/disks';
 import type { Result } from '../../shared/files';
+import { MAX_SEARCH_QUERY, parseSearchFilters } from '../../shared/search';
 import type { IndexRules } from '../../shared/search';
 import { discoverMounts, diskSpace } from './disks';
 import { absolutePath, createFolder, duplicateFile, entryPath, listDirectory } from './files';
@@ -14,6 +15,12 @@ import type { IndexCompletion } from './search/index-automation';
 import { createTerminalService } from './terminals';
 import { quickKind, quickSearch } from './search/quick-search';
 import { isWithin } from './search/scan';
+import { collectSearch, SystemIndex } from './search/system-index';
+import { indexKey } from './search/index-storage';
+import { createBatchFiles } from './batch-files';
+import { filteredSearch } from './search/filtered-search';
+import { readFilePreview } from './file-preview';
+import { createFavorites } from './favorites';
 
 interface PlatformActions {
   chooseDirectory(): Promise<string | null>;
@@ -39,11 +46,18 @@ export type Dispatch = (name: string, args: unknown[]) => Promise<Result<unknown
 
 export function createEngine(home: string, rulesFile: string, platform: PlatformActions) {
   const index = new FileIndex(undefined, join(dirname(rulesFile), '.harmony-index', 'files.sqlite'));
-  const media = createMediaLibrary(index, join(dirname(rulesFile), 'media-metadata.json'));
+  let previews = 0;
+  const favorites = createFavorites(join(dirname(rulesFile), 'favorites.json'));
   const terminals = createTerminalService(home);
   const mounts = () => discoverMounts(home);
   const mountPaths = async () => (await mounts().catch(() => [])).map(mount => mount.path);
-  const automation = new IndexAutomation(index, rulesFile, home, undefined, mountPaths, platform.onIndexComplete);
+  const automation = new IndexAutomation(index, rulesFile, home, undefined, mountPaths, platform.onIndexComplete, new SystemIndex());
+  const media = createMediaLibrary(index, join(dirname(rulesFile), 'media-metadata.json'),
+    extensions => automation.searchEntries({ extensions }, true));
+  const batchFiles = createBatchFiles(async (source, target) => {
+    if (dirname(source) === dirname(target)) index.replaceIndexedFile(source, { path: target, name: basename(target), kind: 'file' });
+    await media.relocateMetadata(source, target);
+  });
 
   async function choose(value: unknown) {
     if (value === undefined) return platform.chooseDirectory();
@@ -87,7 +101,7 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
 
   async function openQuickResult(value: unknown) {
     const path = absolutePath(value);
-    const entry = index.findIndexedPath(path);
+    const entry = await automation.findEntry(path);
     if (!entry) throw new Error('该项目已不在搜索索引中，请重新搜索。');
     const kind = quickKind(entry);
     if (kind === 'folder') throw new Error('请在文件页面浏览目录。');
@@ -110,6 +124,17 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
     ['files:choose', value => index.prioritize(() => choose(value))],
     ['files:mkdir', (directory, name) => index.prioritize(() => createFolder(directory, name))],
     ['files:copyFile', (source, directory) => index.prioritize(() => duplicateFile(source, directory))],
+    ['files:transfer-plan', (paths, directory, operation, policy) => index.prioritize(() => batchFiles.transfer(paths, directory, operation, policy))],
+    ['files:rename-plan', (paths, options) => index.prioritize(() => batchFiles.rename(paths, options))],
+    ['files:batch-run', ticket => index.prioritize(() => batchFiles.run(ticket))],
+    ['favorites:list', () => favorites.list()],
+    ['favorites:add', input => favorites.add(input)],
+    ['favorites:remove', id => favorites.remove(id)],
+    ['files:preview', path => index.prioritize(async () => {
+      if (previews >= 2) throw new Error('正在读取其他文件，请稍后重试。');
+      previews++;
+      try { return await readFilePreview(path); } finally { previews--; }
+    })],
     ['files:open', path => index.prioritize(() => openPath(absolutePath(path)))],
     ['files:reveal', value => index.prioritize(async () => {
       const path = absolutePath(value);
@@ -131,13 +156,21 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
     ['search:add-excluded', value => index.prioritize(() => addRule('excluded', value))],
     ['search:remove-excluded', path => automation.changeRule('excluded', 'remove', path)],
     ['search:rebuild', () => automation.rebuild()],
-    ['search:pause', () => index.pause()],
+    ['search:pause', () => automation.pause()],
     ['search:resume', () => automation.resume()],
     ['search:settings', () => automation.settings()],
-    ['search:set-threads', value => automation.setThreads(value)],
+    ['search:set-threads', (value, preferSystem) => automation.setThreads(value, preferSystem)],
     ['search:stop', () => automation.stop()],
-    ['search:find', query => index.search(query)],
-    ['search:quick', query => quickSearch(term => index.batches(term), query)],
+    ['search:find', (query, input) => {
+      if (typeof query !== 'string' || query.length > MAX_SEARCH_QUERY) throw new Error(`请输入最多 ${MAX_SEARCH_QUERY} 个字符的文件名。`);
+      const term = indexKey(query.trim());
+      const filters = parseSearchFilters(input);
+      if (!term && !Object.values(filters).some(Boolean)) return { matches: [], truncated: false };
+      const directory = filters.directory ? absolutePath(filters.directory) : undefined;
+      const entries = automation.searchEntries({ term, extensions: filters.extension?.split(',') }, false, directory);
+      return collectSearch(filteredSearch(entries, filters, directory), 100);
+    }],
+    ['search:quick', query => quickSearch(term => automation.searchEntries({ term }), query)],
     ['search:open-quick', path => index.prioritize(() => openQuickResult(path))],
     ['disks:list', () => index.prioritize(listDisks)],
     ['disks:index', path => index.prioritize(() => indexDisk(path))],
@@ -159,6 +192,7 @@ export function createEngine(home: string, rulesFile: string, platform: Platform
   return {
     dispatch,
     open: () => automation.open(),
+    refreshSystemIndex: () => automation.refreshSystem(),
     close() {
       automation.close();
       index.dispose();

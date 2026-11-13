@@ -34,9 +34,14 @@ export async function listDirectory(value: unknown): Promise<Directory> {
   return { path, parent: parent === path ? null : parent, entries };
 }
 
+export function validEntryName(name: unknown): name is string {
+  return typeof name === 'string' && !!name.trim() && Buffer.byteLength(name) <= 255
+    && !/[<>:"/\\|?*\x00-\x1f]|[. ]$/.test(name)
+    && !/^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]) *(\.|$)/i.test(name);
+}
+
 export async function createFolder(directory: unknown, name: unknown): Promise<void> {
-  if (typeof name !== 'string' || !name.trim() || /[<>:"/\\|?*\x00-\x1f]|[. ]$/.test(name)
-    || /^(con|prn|aux|nul|com[1-9¹²³]|lpt[1-9¹²³]) *(\.|$)/i.test(name)) {
+  if (!validEntryName(name)) {
     throw new Error('请输入有效的文件夹名称。');
   }
   await mkdir(join(absolutePath(directory), name));

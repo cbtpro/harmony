@@ -20,6 +20,8 @@ const hooks = registerHooks({
 });
 const { FileIndex } = await import('../electron/main/search/file-index.ts');
 const { IndexAutomation } = await import('../electron/main/search/index-automation.ts');
+const { SystemIndex, collectSearch } = await import('../electron/main/search/system-index.ts');
+const { spotlightQuery, windowsQuery, sparqlQuery } = await import('../electron/main/search/system-providers.ts');
 const { IndexStorage } = await import('../electron/main/search/index-storage.ts');
 const { INDEX_TUNING } = await import('../electron/main/search/scan.ts');
 const { quickKind, quickSearch } = await import('../electron/main/search/quick-search.ts');
@@ -244,6 +246,59 @@ test('validates and persists the index thread count separately from scan progres
   const reopened = new IndexAutomation(new FileIndex(), file, root);
   assert.equal((await reopened.settings()).threads, 1);
   assert.deepEqual((await reopened.status()).roots, [root]);
+});
+
+test('searches system-covered roots without crawling them, applies blacklist, and falls back after failure', async t => {
+  const root = await fixture(t);
+  const covered = join(root, 'covered');
+  const local = join(root, 'local');
+  const excluded = join(covered, 'private');
+  const systemFile = join(covered, 'match-system.txt');
+  const localFile = join(local, 'match-local.txt');
+  const blockedFile = join(excluded, 'match-private.txt');
+  const rules = join(root, 'rules.json');
+  await Promise.all([mkdir(excluded, { recursive: true }), mkdir(local)]);
+  await Promise.all([systemFile, localFile, blockedFile].map(path => writeFile(path, '')));
+  await writeFile(rules, JSON.stringify({ version: 1, roots: [covered, local], excluded: [excluded] }));
+  let fails = false;
+  const system = new SystemIndex([{
+    name: 'Test system',
+    probe: async path => path === covered,
+    async find() {
+      if (fails) throw new Error('Provider stopped');
+      return [systemFile, blockedFile, localFile, join(covered, 'match-stale.txt')];
+    },
+  }]);
+  const index = new FileIndex();
+  const automation = new IndexAutomation(index, rules, root,
+    { startup: 5, ruleChange: 5, refresh: 60_000 }, undefined, undefined, system);
+  t.after(() => { automation.close(); index.dispose(); });
+  await automation.open();
+  await waitForPhase(index, 'ready');
+  assert.equal(index.status().count, 1);
+  assert.deepEqual((await automation.status()).sources, [
+    { root: local, provider: 'Harmony' }, { root: covered, provider: 'Test system' },
+  ]);
+  const find = () => collectSearch(automation.searchEntries({ term: 'match-' }), 100);
+  assert.deepEqual((await find()).matches.map(entry => entry.path), [systemFile, localFile]);
+  assert.equal((await automation.findEntry(systemFile))?.path, systemFile);
+  assert.equal(await automation.findEntry(blockedFile), undefined);
+
+  fails = true;
+  await find();
+  for (let attempt = 0; attempt < 200 && index.status().count !== 2; attempt++) await setTimeout(10);
+  await index.whenIdle();
+  assert.equal(index.status().count, 2);
+  assert.deepEqual((await find()).matches.map(entry => entry.path).sort(), [systemFile, localFile].sort());
+  await automation.setThreads(1, false);
+  const reopened = new IndexAutomation(new FileIndex(), rules, root, undefined, undefined, undefined, system);
+  assert.equal((await reopened.settings()).preferSystem, false);
+});
+
+test('escapes names and scopes passed to platform search engines', () => {
+  assert.equal(spotlightQuery({ term: 'a"*?\\b' }), String.raw`kMDItemFSName == "*a\"\*\?\\b*"cd`);
+  assert.match(windowsQuery("C:\\O'Brien", { term: "it's" }, 10), /SCOPE='file:C:\/O''Brien' AND System.FileName LIKE '%it''s%'/);
+  assert.ok(sparqlQuery('/tmp/test folder', { term: 'a"b' }, 10).includes(String.raw`"a\"b"`));
 });
 
 test('reports a manual rebuild and ignores an index stopped by the user', async t => {

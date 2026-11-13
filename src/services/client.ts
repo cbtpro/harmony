@@ -1,6 +1,7 @@
 import type { DisksApi } from '../../shared/disks';
+import type { Favorite, FavoriteInput } from '../../shared/favorites';
 import type { MediaApi } from '../../shared/media';
-import type { FilesApi, Result } from '../../shared/files';
+import type { BatchOutcome, BatchPlan, ConflictPolicy, FilesApi, PreviewContent, RenameOptions, Result, TransferAction } from '../../shared/files';
 import type { IndexSettings, QuickSearchApi, SearchApi } from '../../shared/search';
 import type { TerminalsApi } from '../../shared/terminals';
 
@@ -20,12 +21,13 @@ if (!bridge && location.hostname === '127.0.0.1') {
 
 async function request<T>(name: string, ...args: unknown[]): Promise<Result<T>> {
   try {
-    if (bridge) return await bridge.request(name, args) as Result<T>;
+    const body = JSON.stringify({ name, args });
+    if (bridge) return await bridge.request(name, JSON.parse(body).args) as Result<T>;
     if (!token) return { ok: false, message: '请从 Harmony 客户端打开网页版本。' };
     const response = await fetch('/api/request', {
       method: 'POST',
       headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, args }),
+      body,
     });
     if (response.status === 403) return { ok: false, message: '网页会话已失效，请从客户端重新打开。' };
     if (!response.ok) return { ok: false, message: '客户端无法处理此请求，请稍后重试。' };
@@ -58,6 +60,20 @@ export const terminals: TerminalsApi = {
   open: (id, path) => request('terminals:open', id, path),
 };
 
+export const batchFiles = {
+  preview: (path: string) => request<PreviewContent>('files:preview', path),
+  transfer: (paths: string[], directory: string, operation: TransferAction, policy: ConflictPolicy) =>
+    request<BatchPlan>('files:transfer-plan', paths, directory, operation, policy),
+  rename: (paths: string[], options: RenameOptions) => request<BatchPlan>('files:rename-plan', paths, options),
+  run: (ticket: string) => request<BatchOutcome[]>('files:batch-run', ticket),
+};
+
+export const favoritesApi = {
+  list: () => request<Favorite[]>('favorites:list'),
+  add: (input: FavoriteInput) => request<Favorite[]>('favorites:add', input),
+  remove: (id: string) => request<Favorite[]>('favorites:remove', id),
+};
+
 export const media: MediaApi = {
   list: query => request('media:list', query),
   inspect: path => request('media:inspect', path),
@@ -76,7 +92,7 @@ export const search: SearchApi = {
   pause: () => request('search:pause'),
   resume: () => request('search:resume'),
   stop: () => request('search:stop'),
-  search: query => request('search:find', query),
+  search: (query, filters) => filters ? request('search:find', query, filters) : request('search:find', query),
 };
 
 export const quickSearch: QuickSearchApi = {
@@ -86,7 +102,9 @@ export const quickSearch: QuickSearchApi = {
 
 export const indexSettings = {
   get: () => request<IndexSettings>('search:settings'),
-  save: (threads: number) => request<IndexSettings>('search:set-threads', threads),
+  save: (threads: number, preferSystem: boolean) => request<IndexSettings>('search:set-threads', threads, preferSystem),
+  openSpotlight: () => request<void>('spotlight:settings'),
+  rebuildSpotlight: () => request<void>('spotlight:rebuild'),
 };
 
 export const disks: DisksApi = {

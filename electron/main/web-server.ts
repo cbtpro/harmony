@@ -8,8 +8,9 @@ import type { ReadableStream } from 'node:stream/web';
 import type { Dispatch } from './engine';
 
 const host = '127.0.0.1';
+const maxRequestBytes = 512 * 1024;
 const types: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2',
 };
@@ -46,7 +47,7 @@ export async function startWebServer(dispatch: Dispatch, assets: string, devUrl?
           let size = 0;
           for await (const chunk of request) {
             size += chunk.length;
-            if (size > 32768) {
+            if (size > maxRequestBytes) {
               response.setHeader('Connection', 'close');
               return reject(response, 413);
             }

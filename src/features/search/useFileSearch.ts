@@ -1,6 +1,6 @@
 import { computed, onActivated, onDeactivated, onUnmounted, ref, shallowRef, watch } from 'vue';
 import type { Result } from '../../../shared/files';
-import type { IndexStatus, SearchApi, SearchResults } from '../../../shared/search';
+import type { IndexStatus, SearchApi, SearchFilters, SearchResults } from '../../../shared/search';
 
 type RemoveRule = 'removeRoot' | 'removeExcluded';
 type IndexCommand = Exclude<keyof SearchApi, 'search' | 'status' | RemoveRule>;
@@ -9,6 +9,9 @@ export function useFileSearch(api: SearchApi) {
   const status = shallowRef<IndexStatus>({ phase: 'idle', roots: [], excluded: [], revision: 0, count: 0, skipped: 0 });
   const results = shallowRef<SearchResults>();
   const query = ref('');
+  const filters = shallowRef<SearchFilters>({});
+  const refresh = ref(0);
+  const hasSearch = computed(() => !!query.value.trim() || Object.values(filters.value).some(Boolean));
   const busy = ref(false);
   const error = ref('');
   const searchError = ref('');
@@ -54,15 +57,15 @@ export function useFileSearch(api: SearchApi) {
     schedulePoll();
   }
 
-  watch([query, () => status.value.count, () => status.value.revision, visible], (_, previous, cleanup) => {
-    if (query.value !== previous[0] || status.value.revision !== previous[2]) results.value = undefined;
+  watch([query, () => status.value.count, () => status.value.revision, visible, filters, refresh], (_, previous, cleanup) => {
+    if (query.value !== previous[0] || status.value.revision !== previous[2] || filters.value !== previous[4]) results.value = undefined;
     searchError.value = '';
-    if (!visible.value || !query.value.trim()) return;
+    if (!visible.value || !hasSearch.value) { results.value = undefined; return; }
 
     let current = true;
     const timer = setTimeout(async () => {
       try {
-        const response = await api.search(query.value);
+        const response = await api.search(query.value, filters.value);
         if (!current) return;
         if (response.ok === true) results.value = response.value;
         else searchError.value = response.message;
@@ -89,7 +92,7 @@ export function useFileSearch(api: SearchApi) {
     clearTimeout(pollTimer);
   });
 
-  return { status, active, busy, error, searchError, query, results, command,
+  return { status, active, busy, error, searchError, query, filters, hasSearch, results, command, refresh: () => refresh.value++,
     removeRule: (action: RemoveRule, path: string) => command(() => api[action](path)),
   };
 }

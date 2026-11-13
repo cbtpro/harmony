@@ -205,6 +205,7 @@ onDeactivated(() => {
         <p v-if="status?.phase === 'running'">索引正在更新，媒体会逐步显示。</p>
         <p v-else-if="status?.phase === 'paused'">索引已暂停</p>
         <p v-else>{{ total }} 项媒体</p>
+        <p v-if="status?.sources?.some(source => source.provider !== 'Harmony')">每个系统索引目录最多读取 10,000 个媒体候选项。</p>
       </div>
       <Space wrap>
         <RouterLink :to="{ name: 'search' }">索引设置</RouterLink>

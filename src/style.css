@@ -205,3 +205,4 @@ body { font-family: Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-se
   .table-section .ant-table-content { overflow-x: auto; }
   .table-section .ant-table-content > table { min-width: 360px; }
 }
+.ant-table-tbody > tr[data-preview-selected='true'] > td { background: var(--selection); }

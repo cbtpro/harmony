@@ -4,9 +4,10 @@ import { useRoute } from 'vue-router';
 import { Badge, Button, ConfigProvider, Layout, message, Tabs, theme } from 'ant-design-vue';
 import zhCN from 'ant-design-vue/es/locale/zh_CN';
 import {
-  AppstoreOutlined, FolderOutlined, GlobalOutlined, HddOutlined, InfoCircleOutlined, SearchOutlined, SettingOutlined, VideoCameraOutlined,
+  AppstoreOutlined, FolderOutlined, GlobalOutlined, HddOutlined, InfoCircleOutlined, SearchOutlined, SettingOutlined, TableOutlined, VideoCameraOutlined,
 } from '@ant-design/icons-vue';
 import QuickSearch from '@/features/search/QuickSearch.vue';
+import FavoriteLinks from '@/features/workspace/FavoriteLinks.vue';
 import { useRouteTabs } from '@/features/workspace/useRouteTabs';
 import { workspaceRoutes } from '@/router';
 import { workspaceStatus } from '@/features/workspace/status';
@@ -28,7 +29,7 @@ const appearance = computed(() => ({
     fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, system-ui, sans-serif',
   },
 }));
-const navigationIcons = { files: FolderOutlined, disks: HddOutlined, media: VideoCameraOutlined, search: SearchOutlined, settings: SettingOutlined, about: InfoCircleOutlined };
+const navigationIcons = { files: FolderOutlined, dual: TableOutlined, disks: HddOutlined, media: VideoCameraOutlined, search: SearchOutlined, settings: SettingOutlined, about: InfoCircleOutlined };
 const { tabs, cacheNames, scrollArea, locationFor, activate, close } = useRouteTabs();
 
 async function openBrowser() {
@@ -69,6 +70,7 @@ onUnmounted(() => {
               <span>{{ item.meta.title }}</span>
             </RouterLink>
           </nav>
+          <FavoriteLinks />
         </Layout.Sider>
         <Layout.Content class="workspace-content">
           <Tabs class="workspace-tabs" :locale="{ removeAriaLabel: '关闭标签' }" type="editable-card" size="small" hide-add

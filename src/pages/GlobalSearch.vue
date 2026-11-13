@@ -1,26 +1,55 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, onDeactivated, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Alert, Badge, Button, Card, Collapse, Empty, Input, Table, Tag } from 'ant-design-vue';
 import { FileOutlined, FolderOutlined, PlusOutlined, SearchOutlined } from '@ant-design/icons-vue';
 import { useWorkspaceStatus } from '@/features/workspace/status';
 import FileContextMenu from '@/features/files/FileContextMenu.vue';
+import TransferDialog from '@/features/files/TransferDialog.vue';
+import RenameDialog from '@/features/files/RenameDialog.vue';
+import FilePreview from '@/features/files/FilePreview.vue';
+import { useFilePreview } from '@/features/files/useFilePreview';
+import FavoriteDialog from '@/features/workspace/FavoriteDialog.vue';
+import type { FavoriteInput } from '../../shared/favorites';
+import SearchFiltersForm from '@/features/search/SearchFilters.vue';
 import type { FileEntry } from '../../shared/files';
 import type { IndexStatus } from '../../shared/search';
-import { MAX_SEARCH_QUERY } from '../../shared/search';
+import { MAX_SEARCH_QUERY, parseSearchFilters } from '../../shared/search';
 import { useFileSearch } from '@/features/search/useFileSearch';
 
 import { files, search } from '@/services/client';
 
-const { status, active, busy, error, searchError, query, results, command, removeRule } =
+const { status, active, busy, error, searchError, query, filters, hasSearch, results, command, removeRule, refresh } =
   useFileSearch(search);
+const selected = ref<string[]>([]);
+const transfer = ref<string[]>();
+const renaming = ref<string[]>();
+const favorite = ref<FavoriteInput>();
+onDeactivated(() => {
+  favorite.value = undefined;
+  transfer.value = undefined;
+  renaming.value = undefined;
+});
+const preview = useFilePreview(() => results.value?.matches ?? []);
+const { path: previewPath, candidates: previewEntries } = preview;
+watch([query, filters], () => { selected.value = []; });
+watch(results, result => {
+  if (!result) return;
+  const paths = new Set(result.matches.map(entry => entry.path));
+  selected.value = selected.value.filter(path => paths.has(path));
+});
+const selection = computed(() => ({
+  selectedRowKeys: selected.value,
+  onChange: (keys: (string | number)[]) => { selected.value = keys.map(String); },
+  getCheckboxProps: (entry: FileEntry) => ({ disabled: entry.kind !== 'file' }),
+}));
 const openError = ref('');
 const opening = ref(false);
 const route = useRoute();
 const router = useRouter();
 const columns = [
   { title: '名称与路径', key: 'name' },
-  { title: '操作', key: 'actions', width: 178 },
+  { title: '操作', key: 'actions', width: 222 },
 ];
 const pagination = { pageSize: 20, hideOnSinglePage: true, showSizeChanger: false };
 const phaseBadge: Record<IndexStatus['phase'], 'default' | 'processing' | 'success' | 'warning' | 'error'> = {
@@ -41,13 +70,24 @@ watch([() => route.name, () => route.query.q], ([name, value]) => {
   query.value = next;
 }, { immediate: true });
 
-watch(query, (value, _, cleanup) => {
-  if (route.name !== 'search' || value === routeQuery(route.query.q)) return;
+watch([() => route.name, () => route.query.extension, () => route.query.directory,
+  () => route.query.days, () => route.query.minSize], () => {
+  if (route.name !== 'search') return;
+  const next = parseSearchFilters(route.query);
+  if (JSON.stringify(next) !== JSON.stringify(parseSearchFilters(filters.value))) filters.value = next;
+}, { immediate: true });
+
+watch([query, filters], ([keyword, value], _, cleanup) => {
+  if (route.name !== 'search') return;
+  const parsed = parseSearchFilters(value);
+  const routeFilters = parseSearchFilters(route.query);
+  if (keyword === routeQuery(route.query.q) && JSON.stringify(parsed) === JSON.stringify(routeFilters)) return;
+  const { extension, directory, days, minSize } = parsed;
   const location = route.fullPath;
   const timer = setTimeout(() => {
-    if (route.fullPath === location) {
-      void router.replace({ name: 'search', query: { ...route.query, q: value || undefined } });
-    }
+    if (route.fullPath !== location) return;
+    void router.replace({ name: 'search', query: { q: keyword || undefined, extension, directory,
+      days: days?.toString(), minSize: minSize?.toString() } });
   }, 250);
   cleanup(() => clearTimeout(timer));
 });
@@ -62,8 +102,9 @@ const phaseText = {
   failed: '索引未能完成，可重新建立',
 };
 
-const indexStatusText = computed(() => status.value.failure ?? phaseText[status.value.phase]);
-useWorkspaceStatus(() => `${indexStatusText.value} · 已收录 ${status.value.count} 项`);
+const systemOnly = computed(() => !!status.value.sources?.length && status.value.sources.every(source => source.provider !== 'Harmony'));
+const indexStatusText = computed(() => systemOnly.value ? '使用系统索引' : status.value.failure ?? phaseText[status.value.phase]);
+useWorkspaceStatus(() => systemOnly.value ? indexStatusText.value : `${indexStatusText.value} · 已收录 ${status.value.count} 项`);
 
 function openLocation(entry: FileEntry) {
   const directory = entry.kind === 'directory' ? entry.path : 'directory' in entry ? entry.directory : undefined;
@@ -91,23 +132,32 @@ async function openFile(path: string) {
 </script>
 
 <template>
-  <section class="page search-page" aria-labelledby="search-title">
-    <div class="page-heading"><h1 id="search-title">全局搜索</h1></div>
+  <section class="page search-page" aria-labelledby="search-title" @keydown="preview.key">
+    <div class="page-heading"><h1 id="search-title">全局搜索</h1>
+      <Button :disabled="!hasSearch" @click="favorite = { kind: 'search', label: query.trim() || filters.extension || '搜索', query, filters: parseSearchFilters(filters) }">保存搜索</Button>
+    </div>
 
     <Input v-model:value="query" class="search-field" size="large" type="search" :maxlength="MAX_SEARCH_QUERY"
       aria-label="搜索已索引的文件" placeholder="输入文件或文件夹名称" allow-clear>
       <template #prefix><SearchOutlined /></template>
     </Input>
+    <SearchFiltersForm v-model:value="filters" />
 
     <Alert v-if="error || searchError || openError" role="alert" type="error" show-icon :message="error || searchError || openError" />
     <Alert v-if="results?.truncated" type="info" show-icon
       :message="`仅显示前 ${results.matches.length} 项，可缩小搜索范围。`" />
-    <div class="search-layout" :class="{ 'search-layout-with-results': query.trim() }">
-      <Card v-if="query.trim()" size="small" title="搜索结果" class="table-section search-results">
+    <div class="search-layout" :class="{ 'search-layout-with-results': hasSearch }">
+      <Card v-if="hasSearch" size="small" title="搜索结果" class="table-section search-results">
+        <template #extra>
+          <div class="toolbar">
+            <Button :disabled="!selected.length" @click="transfer = [...selected]">批量归档{{ selected.length ? '（' + selected.length + '）' : '' }}</Button>
+            <Button :disabled="!selected.length" @click="renaming = [...selected]">批量重命名</Button>
+          </div>
+        </template>
         <FileContextMenu v-slot="{ row }" :disabled="opening" open-parent
           @open-entry="openEntry" @open-parent="openLocation">
-          <Table size="small" :columns="columns" :data-source="results?.matches ?? []" row-key="path" :custom-row="row"
-            :pagination="pagination" table-layout="fixed">
+          <Table size="small" :columns="columns" :data-source="results?.matches ?? []" row-key="path" :custom-row="(entry: FileEntry) => ({ ...row(entry), ...preview.row(entry) })"
+            :pagination="pagination" :row-selection="selection" table-layout="fixed">
             <template #emptyText>
               <Empty :image="Empty.PRESENTED_IMAGE_SIMPLE"
                 :description="results ? '索引中没有匹配项目' : '正在搜索'" />
@@ -122,6 +172,7 @@ async function openFile(path: string) {
                 <div class="result-path">{{ record.path }}</div>
               </template>
               <template v-else-if="column.key === 'actions'">
+                <Button v-if="record.kind === 'file'" size="small" type="text" @click="preview.open(record)">预览</Button>
                 <RouterLink :to="{ path: '/', query: { directory: record.kind === 'directory' ? record.path : record.directory } }">
                   {{ record.kind === 'directory' ? '浏览文件夹' : '打开所在目录' }}
                 </RouterLink>
@@ -140,9 +191,12 @@ async function openFile(path: string) {
           </template>
           <Alert v-if="status.settingsWarning" role="alert" class="index-alert" type="warning" show-icon :message="status.settingsWarning" />
           <p class="index-description">
-            已收录 {{ status.count }} 项<span v-if="status.skipped">，{{ status.skipped }} 个目录未能完整读取</span>。
+            <template v-if="!systemOnly">Harmony 已收录 {{ status.count }} 项<span v-if="status.skipped">，{{ status.skipped }} 个目录未能完整读取</span>。</template>
             规则自动保存，白名单重叠时只扫描一次，黑名单优先。
           </p>
+          <ul v-if="status.sources?.length" aria-label="索引来源">
+            <li v-for="source in status.sources" :key="source.root">{{ source.provider }} · {{ source.root }}</li>
+          </ul>
           <div class="index-rules">
             <div v-for="rule in [
               { title: '白名单', paths: status.roots, add: 'addRoot', remove: 'removeRoot', color: 'blue' },
@@ -165,7 +219,7 @@ async function openFile(path: string) {
             </div>
           </div>
           <div class="toolbar">
-            <Button size="small" :disabled="busy || active || !status.roots.length" @click="command('rebuild')">立即重建索引</Button>
+            <Button size="small" :disabled="busy || active || !status.roots.length" @click="command('rebuild')">{{ systemOnly ? '重新检测系统索引' : '立即重建索引' }}</Button>
             <Button v-if="status.phase === 'running'" size="small" :disabled="busy" @click="command('pause')">暂停索引</Button>
             <Button v-if="status.phase === 'paused'" size="small" :disabled="busy" @click="command('resume')">继续索引</Button>
             <Button v-if="status.resumable && ['stopped', 'failed'].includes(status.phase)" size="small"
@@ -176,6 +230,10 @@ async function openFile(path: string) {
         </Collapse.Panel>
       </Collapse>
     </div>
+    <TransferDialog :paths="transfer" @close="transfer = undefined" @completed="selected = []; refresh()" />
+    <RenameDialog :paths="renaming" @close="renaming = undefined" @completed="selected = []; refresh()" />
+    <FilePreview v-model:path="previewPath" :entries="previewEntries" />
+    <FavoriteDialog :item="favorite" @close="favorite = undefined" />
   </section>
 </template>
 

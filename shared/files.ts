@@ -22,3 +22,40 @@ export interface FilesApi {
   copyPath(path: string): Promise<Result<void>>;
   trash(path: string): Promise<Result<void>>;
 }
+
+export type TransferAction = 'copy' | 'move';
+export type ConflictPolicy = 'skip' | 'keep' | 'replace';
+
+export interface BatchRow {
+  source: string;
+  target?: string;
+  action: 'ready' | 'skip' | 'replace' | 'blocked';
+  reason?: string;
+}
+
+export interface BatchPlan {
+  rows: BatchRow[];
+  ticket?: string;
+}
+
+export interface BatchOutcome {
+  source: string;
+  target?: string;
+  status: 'done' | 'skipped' | 'failed';
+  message?: string;
+}
+
+export interface RenameOptions {
+  find: string;
+  replace: string;
+  numbering: boolean;
+  start: number;
+  date: boolean;
+}
+
+export interface PreviewContent {
+  kind: 'image' | 'pdf' | 'text' | 'markdown';
+  data: string;
+  mime?: string;
+  truncated?: boolean;
+}

@@ -8,7 +8,7 @@ test('shares the engine with the webpage and denies unauthenticated requests', a
   try {
     const data = join(profile, 'workspace');
     await mkdir(data);
-    await writeFile(join(data, 'shared-file.txt'), '');
+    await writeFile(join(data, 'shared-file.txt'), 'Web file preview');
     await writeFile(join(profile, 'index-rules.json'), JSON.stringify({ version: 1, roots: [data], excluded: [] }));
     const app = await electron.launch({
       args: ['.', `--user-data-dir=${profile}`],
@@ -39,6 +39,10 @@ test('shares the engine with the webpage and denies unauthenticated requests', a
       await address.fill(data);
       await address.press('Enter');
       await expect(web.getByRole('button', { name: 'shared-file.txt' })).toBeVisible();
+      await web.getByRole('row').filter({ hasText: 'shared-file.txt' }).press('Space');
+      await expect(web.getByRole('dialog', { name: 'shared-file.txt' })).toContainText('Web file preview');
+      await web.keyboard.press('Escape');
+      await expect(web.getByRole('dialog', { name: 'shared-file.txt' })).toBeHidden();
       await app.evaluate(({ shell }) => {
         shell.showItemInFolder = path => { process.env.HARMONY_WEB_TEST_REVEALED = path; };
       });

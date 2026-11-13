@@ -17,6 +17,8 @@ for (const [category, values] of Object.entries(formats)) {
   for (const value of values.split(' ')) extensions.set(value, category as MediaCategory);
 }
 
+export const mediaExtensions = [...extensions.keys()];
+
 const folderCategories: Partial<Record<MediaCategory, Record<string, MediaCategory>>> = {
   video: {
     movies: 'movie', films: 'movie', '电影': 'movie',

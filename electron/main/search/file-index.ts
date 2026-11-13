@@ -66,19 +66,24 @@ export class FileIndex {
     return this.task ?? Promise.resolve();
   }
 
-  scanPlan(mounts: readonly string[]) {
-    const excluded = this.storageFile ? [...this.rules.excluded, dirname(this.storageFile)] : this.rules.excluded;
-    const roots = effectiveRoots(this.rules.roots, excluded, mounts);
-    return { roots, excluded, scope: createScanScope(roots, excluded, mounts) };
+  scanPlan(mounts: readonly string[], systemRoots: readonly string[] = []) {
+    const excluded = [...this.rules.excluded];
+    if (this.storageFile) excluded.push(dirname(this.storageFile));
+    const effective = effectiveRoots(this.rules.roots, excluded, mounts);
+    const roots = effective.filter(root => !systemRoots.includes(root));
+    const boundaries = [...mounts, ...effective];
+    return { roots, excluded, scope: createScanScope(roots, excluded, boundaries) };
   }
 
   rebuild(mounts: readonly string[] = [], visitDirectory?: (path: string) => void,
-    threads = 1, mode: ScanMode = 'fresh'): IndexStatus {
+    threads = 1, mode: ScanMode = 'fresh', excludedRoots: readonly string[] = []): IndexStatus {
     if (this.task) throw new Error('请先停止当前索引任务。');
     if (!this.rules.roots.length) throw new Error('请先添加白名单目录。');
-    const { roots, excluded, scope } = this.scanPlan(mounts);
+    const { roots, excluded, scope } = this.scanPlan(mounts, excludedRoots);
     const boundaries = mounts.filter(mount => roots.some(root => isWithin(root, mount)));
-    const signature = JSON.stringify([1, [...roots].sort(), [...excluded].sort(), boundaries.sort()]);
+    const signatureParts: unknown[] = [1, [...roots].sort(), [...excluded].sort(), boundaries.sort()];
+    if (excludedRoots.length) signatureParts.push([...excludedRoots].sort());
+    const signature = JSON.stringify(signatureParts);
     const previous = this.storage;
     const reuse = mode === 'continue' && previous && previous.checkpoint()?.signature === signature;
     if (reuse) this.storage = undefined;
@@ -111,12 +116,12 @@ export class FileIndex {
   reconcile(paths: readonly string[], mounts: readonly string[], watchers: {
     visitDirectory(path: string): void;
     removeDirectory(path: string): void;
-  }) {
+  }, excludedRoots: readonly string[] = []) {
     const storage = this.storage;
     if (this.task || !storage || this.phase !== 'ready' || !paths.length) return Promise.resolve();
     const revision = this.revision;
     this.phase = 'running';
-    this.task = updateDirectories(storage, paths, this.scanPlan(mounts).scope, {
+    this.task = updateDirectories(storage, paths, this.scanPlan(mounts, excludedRoots).scope, {
       ...watchers,
       checkpoint: async () => await this.checkpoint() && revision === this.revision,
       observation: () => ++this.observation,
@@ -231,7 +236,7 @@ export class FileIndex {
     else if (this.phase === 'stopping') this.phase = 'idle';
   }
 
-  async *batches(term = ''): AsyncGenerator<readonly ScanEntry[]> {
+  async *batches(term = '', directory?: string): AsyncGenerator<readonly ScanEntry[]> {
     const storage = this.storage;
     if (!storage) return;
     const last = storage.lastId();
@@ -241,7 +246,8 @@ export class FileIndex {
       const rows = storage.read(cursor, last, QUERY_BATCH_SIZE, term);
       if (!rows.length) break;
       cursor = rows[rows.length - 1].id;
-      const entries = rows.filter(row => row.matched).map(({ path, name, kind }) => ({ path, name, kind }));
+      const entries = rows.filter(row => row.matched && (!directory || isWithin(directory, row.path)))
+        .map(({ path, name, kind }) => ({ path, name, kind }));
       if (entries.length) yield entries;
     }
   }

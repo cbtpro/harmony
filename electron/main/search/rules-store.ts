@@ -7,7 +7,7 @@ import { INDEX_TUNING, isSystemPath } from './scan';
 
 export const RULE_LIMITS = { roots: INDEX_TUNING.roots, excluded: 16 };
 const MAX_SETTINGS_BYTES = 1024 * 1024;
-export interface SavedIndexRules extends IndexRules { threads?: number }
+export interface SavedIndexRules extends IndexRules { threads?: number; preferSystem?: boolean }
 
 function parsePaths(value: unknown, limit: number) {
   if (!Array.isArray(value) || value.length > limit) throw new Error('索引目录规则无效。');
@@ -35,6 +35,7 @@ export async function loadRules(file: string, home: string): Promise<SavedIndexR
     roots: parsePaths(saved.roots, RULE_LIMITS.roots).filter(path => !isSystemPath(path)),
     excluded: parsePaths(saved.excluded, RULE_LIMITS.excluded),
     threads: Number.isSafeInteger(saved.threads) && saved.threads > 0 ? saved.threads : undefined,
+    preferSystem: typeof saved.preferSystem === 'boolean' ? saved.preferSystem : undefined,
   };
 }
 

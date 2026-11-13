@@ -16,6 +16,7 @@ const hooks = registerHooks({
 });
 const { classify } = await import('../electron/main/media/classification.ts');
 const { createMediaLibrary } = await import('../electron/main/media/library.ts');
+const { createBatchFiles } = await import('../electron/main/batch-files.ts');
 const { FileIndex } = await import('../electron/main/search/file-index.ts');
 hooks.deregister();
 
@@ -69,4 +70,16 @@ test('queries a media catalog, refuses collisions and preserves metadata on rena
   const result = await reopened.list({ query: 'catalog handbook', category: 'all' });
   assert.equal(result.items[0]?.path, renamed.path);
   assert.equal(result.items[0]?.metadata?.creator, 'Example Author');
+
+  const archive = join(root, 'archive');
+  await mkdir(archive);
+  const batch = createBatchFiles(reopened.relocateMetadata);
+  const plan = await batch.transfer([renamed.path], archive, 'move', 'skip');
+  const [moved] = await batch.run(plan.ticket);
+  assert.equal(moved.status, 'done');
+  assert.equal(moved.message, undefined);
+  const persisted = JSON.parse(await readFile(file, 'utf8'));
+  assert.deepEqual(persisted.entries.map(([path, metadata]) => [path, metadata.title]), [
+    [join(archive, 'New handbook.EPUB'), 'Catalog handbook'],
+  ]);
 });

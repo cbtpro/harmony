@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onDeactivated, ref, watch } from 'vue';
+import { computed, onDeactivated, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Alert, Button, Card, Empty, Input, Modal, Table, Tag } from 'ant-design-vue';
 import {
@@ -8,6 +8,11 @@ import {
 } from '@ant-design/icons-vue';
 import type { FileEntry } from '../../shared/files';
 import FileContextMenu from '@/features/files/FileContextMenu.vue';
+import FilePreview from '@/features/files/FilePreview.vue';
+import RenameDialog from '@/features/files/RenameDialog.vue';
+import { useFilePreview } from '@/features/files/useFilePreview';
+import FavoriteDialog from '@/features/workspace/FavoriteDialog.vue';
+import type { FavoriteInput } from '../../shared/favorites';
 import { useFileBrowser } from '@/features/files/useFileBrowser';
 import { useWorkspaceStatus } from '@/features/workspace/status';
 
@@ -15,6 +20,17 @@ import { files } from '@/services/client';
 
 const browser = useFileBrowser(files);
 const { directory, address, query, busy, error, entries } = browser;
+const preview = useFilePreview(() => entries.value);
+const { path: previewPath, candidates: previewEntries } = preview;
+const favorite = ref<FavoriteInput>();
+const selected = ref<string[]>([]);
+const renaming = ref<string[]>();
+const selection = computed(() => ({
+  selectedRowKeys: selected.value,
+  onChange: (keys: (string | number)[]) => { selected.value = keys.map(String); },
+  getCheckboxProps: (entry: FileEntry) => ({ disabled: entry.kind !== 'file' }),
+}));
+watch([() => directory.value?.path, query], () => { selected.value = []; });
 const route = useRoute();
 const router = useRouter();
 const creating = ref(false);
@@ -24,7 +40,7 @@ const trashEntry = ref<FileEntry>();
 const columns = [
   { title: '名称', key: 'name' },
   { title: '类型', key: 'kind', width: 92 },
-  { title: '操作', key: 'actions', width: 164 },
+  { title: '操作', key: 'actions', width: 204 },
 ];
 const kindLabels = { directory: '文件夹', file: '文件', link: '链接', other: '其他' };
 const kindIcons = { directory: FolderOutlined, file: FileOutlined, link: LinkOutlined, other: FileOutlined };
@@ -70,6 +86,7 @@ function openEntry(entry: FileEntry) {
 onDeactivated(() => {
   creating.value = false;
   trashEntry.value = undefined;
+  favorite.value = undefined;
 });
 
 function showFolderDialog() {
@@ -94,12 +111,15 @@ async function confirmTrash() {
 </script>
 
 <template>
-  <section class="page files-page" aria-labelledby="files-title">
+  <section class="page files-page" aria-labelledby="files-title" @keydown="preview.key">
     <div class="page-heading">
       <h1 id="files-title">文件管理</h1>
-      <Button type="primary" :disabled="busy || !directory" @click="showFolderDialog">
-        <template #icon><PlusOutlined /></template>新建文件夹
-      </Button>
+      <div class="toolbar">
+        <Button :disabled="busy || !selected.length" @click="renaming = [...selected]">批量重命名</Button>
+        <Button type="primary" :disabled="busy || !directory" @click="showFolderDialog">
+          <template #icon><PlusOutlined /></template>新建文件夹
+        </Button>
+      </div>
     </div>
 
     <Card size="small" class="directory-panel" aria-label="目录导航">
@@ -116,6 +136,7 @@ async function confirmTrash() {
         <Button :disabled="busy || !directory" @click="browser.navigate(directory?.path)">
           <template #icon><ReloadOutlined /></template>刷新
         </Button>
+        <Button :disabled="!directory" @click="directory && (favorite = { kind: 'directory', directory: directory.path, label: directory.path.split(/[\\/]/).filter(Boolean).pop() || directory.path })">收藏目录</Button>
       </div>
       <form class="path-form" @submit.prevent="goToDirectory(address)">
         <Input v-model:value="address" aria-label="目录路径" placeholder="输入目录的绝对路径"
@@ -137,8 +158,8 @@ async function confirmTrash() {
       </template>
       <FileContextMenu v-slot="{ row }" :disabled="busy" copy-file trash
         @open-entry="openEntry" @copy-file="browser.copy" @trash-entry="trashEntry = $event">
-        <Table size="small" :columns="columns" :data-source="entries" row-key="path" :custom-row="row"
-          :pagination="pagination" :loading="busy" table-layout="fixed">
+        <Table size="small" :columns="columns" :data-source="entries" row-key="path" :custom-row="(entry: FileEntry) => ({ ...row(entry), ...preview.row(entry) })"
+          :pagination="pagination" :loading="busy" :row-selection="selection" table-layout="fixed">
           <template #emptyText><Empty :image="Empty.PRESENTED_IMAGE_SIMPLE" description="没有可显示的项目" /></template>
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'name'">
@@ -155,6 +176,7 @@ async function confirmTrash() {
               <Tag :color="record.kind === 'directory' ? 'blue' : undefined">{{ kindLabels[record.kind as FileEntry['kind']] }}</Tag>
             </template>
             <template v-else-if="column.key === 'actions'">
+              <Button v-if="record.kind === 'file'" size="small" type="text" @click="preview.open(record)">预览</Button>
               <Button v-if="record.kind === 'file'" size="small" type="text" class="file-action"
                 :disabled="busy" @click="browser.copy(record)">复制到…</Button>
               <Button size="small" type="text" class="file-action" :disabled="busy"
@@ -165,6 +187,9 @@ async function confirmTrash() {
       </FileContextMenu>
     </Card>
 
+    <FilePreview v-model:path="previewPath" :entries="previewEntries" />
+    <FavoriteDialog :item="favorite" @close="favorite = undefined" />
+    <RenameDialog :paths="renaming" @close="renaming = undefined" @completed="selected = []; browser.navigate(directory?.path)" />
     <Modal v-model:open="creating" title="新建文件夹" ok-text="新建" :confirm-loading="busy"
       :ok-button-props="{ disabled: !folderName.trim() }" @ok="createFolder">
       <form @submit.prevent="createFolder">

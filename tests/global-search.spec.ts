@@ -29,6 +29,14 @@ test('indexes automatically, enforces both lists and restores rules on restart',
       await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
       const threads = page.getByRole('spinbutton', { name: '索引线程数' });
       await expect(threads).toBeVisible();
+      await expect(page.getByRole('switch', { name: '优先使用系统索引' })).toHaveAttribute('aria-checked', 'true');
+      if (process.platform === 'darwin') {
+        await expect(page.getByRole('button', { name: '打开 Spotlight 设置' })).toBeVisible();
+        await page.getByRole('button', { name: '修复 Spotlight 索引' }).click();
+        const repair = page.getByRole('dialog');
+        await expect(repair).toContainText('启动磁盘');
+        await repair.getByRole('button', { name: '取消' }).click();
+      }
       const previous = await threads.inputValue();
       const max = Number(await threads.getAttribute('aria-valuemax'));
       savedThreads = previous === '1' && max > 1 ? '2' : '1';
